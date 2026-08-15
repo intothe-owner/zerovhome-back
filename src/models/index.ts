@@ -9,7 +9,7 @@ import { MemberSetting } from './MemberSetting';
 import { Member } from './Member';
 import { VisitorLog } from './VisitorLog';
 import { Policy } from './Policy';
-
+import { MemberDevice } from './MemberDevice';
 
 // --- 테이블 간의 관계(Relation) 정의 ---
 
@@ -37,4 +37,16 @@ Comment.belongsTo(Post, { foreignKey: 'postId' });
 Member.hasMany(Post, { foreignKey: 'memberId' });
 Post.belongsTo(Member, { foreignKey: 'memberId' });
 
-export { Menu, Page, BoardConfig, Post, Comment, SiteSetting, Member,MemberSetting,VisitorLog,Policy };
+// 1:N 관계 설정: Member(1) -> MemberDevice(N)
+Member.hasMany(MemberDevice, { 
+  foreignKey: 'memberId', 
+  as: 'devices', // 조회할 때 사용할 별칭
+  onDelete: 'CASCADE' // 회원이 탈퇴(삭제)되면 기기 정보도 함께 삭제됨
+});
+
+MemberDevice.belongsTo(Member, { 
+  foreignKey: 'memberId',
+  as: 'member'
+});
+
+export { Menu, Page, BoardConfig, Post, Comment, SiteSetting, Member,MemberSetting,MemberDevice,VisitorLog,Policy };

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction, Router } from 'express';
 import jwt from 'jsonwebtoken';
-const JWT_SECRET = process.env.JWT_SECRET || 'zerov_secret_key_2026';
+const JWT_SECRET = process.env.JWT_SECRET || 'userLogin';
 
 // Request 객체에 user 타입 추가
 declare global {

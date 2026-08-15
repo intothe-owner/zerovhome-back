@@ -4,6 +4,8 @@ import jwt from 'jsonwebtoken';
 import { Member } from '../models/Member';
 import { MemberSetting } from '../models/MemberSetting';
 import { uploadAny } from '../middlewares/uploadAny';
+import { MemberDevice } from '../models/MemberDevice';
+import { checkLevel } from '../middlewares/authMiddleware';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET||'userLogin';
@@ -186,4 +188,36 @@ router.post('/setup-admin', async (req: Request, res: Response) => {
   }
 });
 
+// 로그인 후 클라이언트가 FCM 토큰을 서버로 전송할 때 호출하는 API
+router.post('/token', async (req: Request, res: Response) => {
+  try {
+    // ✨ req.user 대신 req.body에서 memberId를 직접 추출합니다.
+    const { deviceToken, deviceType, deviceId, memberId } = req.body;
+
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: '회원 ID가 필요합니다.' });
+    }
+
+    console.log('FCM 토큰 저장 API 진입 완료');
+
+    const [device, created] = await MemberDevice.findOrCreate({
+      where: { deviceId: deviceId || deviceToken },
+      defaults: {
+        memberId,
+        deviceToken,
+        deviceType: deviceType || 'ETC',
+        deviceId: deviceId || 'unknown'
+      }
+    });
+
+    if (!created) {
+      await device.update({ deviceToken, lastUsedAt: new Date(), memberId });
+    }
+
+    res.status(200).json({ success: true, message: '푸시 토큰이 등록되었습니다.' });
+  } catch (error) {
+    console.error('토큰 저장 에러:', error);
+    res.status(500).json({ success: false, message: '서버 오류' });
+  }
+});
 export default router;

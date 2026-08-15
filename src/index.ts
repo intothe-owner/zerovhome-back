@@ -15,7 +15,7 @@ import popupRoutes from './routes/popupRoutes';
 import visitorRoutes from './routes/visitorRoutes';
 import memberRoutes from './routes/memberRoutes';
 import path from 'path';
-
+import './config/firebase';
 dotenv.config();
 
 const app = express();

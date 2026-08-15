@@ -6,9 +6,11 @@ import fs from 'fs';
 import multerS3 from 'multer-s3';
 import { S3Client } from '@aws-sdk/client-s3';
 import path from 'path';
-import { Post, Comment, BoardConfig } from '../models'; 
+import { Post, Comment, BoardConfig, Member } from '../models'; // ✨ Member 추가
+import { MemberDevice } from '../models/MemberDevice'; // ✨ MemberDevice 추가
 import { checkLevel } from '../middlewares/authMiddleware';
 import dotenv from 'dotenv';
+import { getMessaging } from 'firebase-admin/messaging';
 
 dotenv.config();
 const router = Router();
@@ -27,7 +29,6 @@ const s3 = new S3Client({
 // ==========================================
 // 📁 Multer S3 업로드 설정
 // ==========================================
-// 파일 확장자 필터링 (exe, apk 차단)
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const ext = path.extname(file.originalname).toLowerCase();
   if (ext === '.exe' || ext === '.apk') {
@@ -40,17 +41,15 @@ export const upload = multer({
   storage: multerS3({
     s3: s3,
     bucket: process.env.AWS_S3_BUCKET_NAME as string,
-    contentType: multerS3.AUTO_CONTENT_TYPE, // S3에서 파일 타입을 자동으로 인식하도록 설정
+    contentType: multerS3.AUTO_CONTENT_TYPE,
     key: (req, file, cb) => {
-      // 한글 파일명 깨짐 방지
       const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-      // S3 버킷 내 저장될 경로 및 파일명 (uploads/폴더 하위에 저장)
       cb(null, `uploads/${uniqueSuffix}${path.extname(originalName)}`);
     }
   }),
   fileFilter,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB 제한
+  limits: { fileSize: 50 * 1024 * 1024 } 
 });
 const uploadFields = upload.fields([
   { name: 'attachments', maxCount: 10 },
@@ -125,16 +124,14 @@ router.post('/:boardId/posts', checkLevel, uploadFields, async (req: Request, re
     const configId = boardConfig.get('id') as number;
     let { writerName, title, content, memberId, password, isNotice, category, extraData } = req.body;
 
-    // files 객체에서 attachments와 editorImages 분리 추출[cite: 6]
     const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
     const attachmentFiles = files?.['attachments'] || [];
     const editorImages = files?.['editorImages'] || [];
 
-    // 💡 에디터 본문 이미지 주소 치환 로직 (cid:id -> 실제 업로드 URL)
     if (editorImages.length > 0) {
       editorImages.forEach((file: any) => {
         const s3Url = file.location || `/uploads/${file.filename}`;
-        const fileId = path.parse(file.originalname).name; // 확장자를 제외한 식별자 (예: img_12345)
+        const fileId = path.parse(file.originalname).name;
         content = content.replace(new RegExp(`cid:${fileId}`, 'g'), s3Url);
       });
     }
@@ -154,7 +151,7 @@ router.post('/:boardId/posts', checkLevel, uploadFields, async (req: Request, re
       boardConfigId: configId,
       writerName,
       title,
-      content, // 치환 완료된 최종 HTML 저장[cite: 6]
+      content,
       memberId: memberId || null,
       password: password || null,
       isNotice: isNotice === 'true' || isNotice === true,
@@ -164,6 +161,44 @@ router.post('/:boardId/posts', checkLevel, uploadFields, async (req: Request, re
       thumbnailUrl,
     });
 
+    // ✨ 💡 [신규] 게시판 설정에 usePush가 켜져 있을 경우 푸시 알림 발송
+    if (boardConfig.getDataValue('usePush') === true) {
+      try {
+        // 레벨 10 회원들 중 푸시 알림 수신 동의한 기기 토큰들 조회
+        const adminDevices = await MemberDevice.findAll({
+          include: [{
+            model: Member,
+            as: 'member',
+            where: { level: 10 }
+          }],
+          where: { isPushActive: true }
+        });
+
+        const tokens = adminDevices.map(device => device.getDataValue('deviceToken'));
+
+        if (tokens.length > 0) {
+          const message = {
+            notification: {
+              title: `[${boardConfig.getDataValue('boardName')}] 새 글 등록 알림`,
+              body: `'${writerName}'님이 새 글을 작성했습니다: ${title}`
+            },
+            tokens: tokens, // FCM 다중 발송 토큰 배열
+          };
+          // ✨ 변경됨: admin.messaging() 대신 getMessaging() 사용
+          getMessaging().sendEachForMulticast(message)
+            .then(response => {
+              console.log(`푸시 알림 성공: ${response.successCount}건, 실패: ${response.failureCount}건`);
+            })
+            .catch(error => {
+              console.error('FCM 푸시 전송 에러:', error);
+            });
+        }
+      } catch (pushError) {
+        console.error('푸시 알림 데이터베이스 조회 중 에러:', pushError);
+      }
+    }
+    // ✨ 푸시 알림 발송 로직 종료
+
     res.status(201).json({ success: true, data: newPost, message: '게시글이 작성되었습니다.' });
   } catch (error: any) {
     if (error.message && error.message.includes('보안상')) return res.status(400).json({ success: false, message: error.message });
@@ -172,13 +207,10 @@ router.post('/:boardId/posts', checkLevel, uploadFields, async (req: Request, re
 });
 
 // 1-3. 게시글 상세 조회
-// src/routes/boardRoutes.ts 내부 1-3. 게시글 상세 조회 부분 수정
-
-// 1-3. 게시글 상세 조회
 router.get('/posts/:postId', checkLevel, async (req: Request, res: Response) => {
   try {
     const postId = Number(req.params.postId);
-    const post = await Post.findByPk(postId); //[cite: 9]
+    const post = await Post.findByPk(postId); 
 
     if (!post) return res.status(404).json({ success: false, message: '게시글을 찾을 수 없습니다.' });
 
@@ -190,7 +222,6 @@ router.get('/posts/:postId', checkLevel, async (req: Request, res: Response) => 
     await post.increment('hitCount', { by: 1 }); 
     await post.reload();
 
-    // 💡 이전글 (현재 글보다 ID가 큰 최신글 중 가장 작은 ID)[cite: 7]
     const prevPost = await Post.findOne({
       where: { 
         boardConfigId: post.getDataValue('boardConfigId'), 
@@ -200,7 +231,6 @@ router.get('/posts/:postId', checkLevel, async (req: Request, res: Response) => 
       attributes: ['id', 'title']
     });
 
-    // 💡 다음글 (현재 글보다 ID가 작은 과거글 중 가장 큰 ID)[cite: 7]
     const nextPost = await Post.findOne({
       where: { 
         boardConfigId: post.getDataValue('boardConfigId'), 
@@ -210,7 +240,6 @@ router.get('/posts/:postId', checkLevel, async (req: Request, res: Response) => 
       attributes: ['id', 'title']
     });
 
-    // 💡 data에 prevPost와 nextPost를 함께 응답 객체로 묶어서 반환[cite: 9]
     res.status(200).json({ 
       success: true, 
       data: post,
@@ -244,7 +273,6 @@ router.put('/posts/:postId', checkLevel, uploadFields, async (req: Request, res:
     const attachmentFiles = files?.['attachments'] || [];
     const editorImages = files?.['editorImages'] || [];
 
-    // 본문 이미지 주소 치환
     if (editorImages.length > 0) {
       let finalContent = updateData.content;
       editorImages.forEach((file: any) => {
@@ -269,6 +297,7 @@ router.put('/posts/:postId', checkLevel, uploadFields, async (req: Request, res:
     res.status(500).json({ success: false, message: '서버 오류' });
   }
 });
+
 // 1-5. 게시글 삭제
 router.delete('/posts/:postId', checkLevel, async (req: Request, res: Response) => {
   try {
@@ -281,8 +310,6 @@ router.delete('/posts/:postId', checkLevel, async (req: Request, res: Response) 
     const isAdmin = req.user.level >= 9;
     
     if (!isAuthor && !isAdmin) {
-      // (비밀번호 폼이 있다면 바디로 받아서 처리해야 하나, DELETE 메서드는 보통 파라미터만 받습니다.
-      // 필요 시 프론트엔드에서 비밀번호를 검증하는 모달을 띄우고 POST/PUT 등으로 처리할 수도 있습니다.)
       return res.status(403).json({ success: false, message: '삭제 권한이 없습니다.' });
     }
 
@@ -293,7 +320,6 @@ router.delete('/posts/:postId', checkLevel, async (req: Request, res: Response) 
     res.status(500).json({ success: false, message: '서버 오류' });
   }
 });
-
 
 // ==========================================
 // 2. 댓글 (Comment) 라우터

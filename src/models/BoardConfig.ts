@@ -35,6 +35,9 @@ BoardConfig.init({
   
   fileUploadCount: { type: DataTypes.INTEGER, defaultValue: 2, comment: '파일 첨부 개수' },
   useEditor: { type: DataTypes.BOOLEAN, defaultValue: true, comment: '에디터 사용 여부' },
+
+  // ✨ 신규: 푸시 알림 사용 여부
+  usePush: { type: DataTypes.BOOLEAN, defaultValue: false, comment: '게시글 작성 시 푸시 발송 여부' },
 }, { 
   sequelize, 
   tableName: 'board_configs',
