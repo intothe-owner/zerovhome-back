@@ -54,11 +54,11 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // 2. 특정 페이지 상세 조회
+// 2. 특정 페이지 상세 조회
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     console.log('111');
     const param = req.params.id;
-
     
     // 💡 param이 "0"인 경우(메인 페이지) 처리
     if (param === "0") {
@@ -73,16 +73,28 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     // 1. 숫자인지 문자열(url 슬러그)인지 판별하여 메뉴 검색
     if (!isNaN(Number(param))) {
+      // 💡 param이 숫자일 경우: 메뉴를 먼저 찾습니다.
       const menu = await Menu.findByPk(Number(param));
-      if (menu) menuIds.push((menu as any).id);
+      
+      if (menu) {
+        // 💡 [핵심 수정 부분] 메뉴에 url이 존재한다면, 같은 url을 쓰는 모든 메뉴를 검색하여 ID를 담습니다.
+        if ((menu as any).url) {
+          const sharedMenus = await Menu.findAll({ where: { url: (menu as any).url } });
+          menuIds = sharedMenus.map((m: any) => m.id);
+        } else {
+          // url이 없는 특수한 경우라면 자기 자신의 ID만 담습니다.
+          menuIds.push((menu as any).id);
+        }
+      }
     } else {
+      // 💡 param이 문자열일 경우: 기존과 동일하게 url 기준으로 검색
       const searchUrl = `/${param}`;
-      //const searchUrl = `/page?id=${param}`;
       console.log(searchUrl);
       const menus = await Menu.findAll({ where: { url: searchUrl } });
       menuIds = menus.map((m: any) => m.id);
     }
-    console.log(menuIds);
+    
+    console.log("공유되는 메뉴 ID 목록:", menuIds);
 
     if (menuIds.length === 0) {
       return res.status(404).json({ success: false, message: '메뉴를 찾을 수 없습니다.' });
