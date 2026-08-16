@@ -56,6 +56,7 @@ router.get('/', async (req: Request, res: Response) => {
 // 2. 특정 페이지 상세 조회
 router.get('/:id', async (req: Request, res: Response) => {
   try {
+    console.log('111');
     const param = req.params.id;
 
     
