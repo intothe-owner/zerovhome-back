@@ -4,7 +4,8 @@ import { Op } from 'sequelize';
 import multer from 'multer';
 import fs from 'fs';
 import multerS3 from 'multer-s3';
-import { S3Client } from '@aws-sdk/client-s3';
+// 💡 S3 파일 삭제를 위해 DeleteObjectCommand 추가
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3'; 
 import path from 'path';
 import { Post, Comment, BoardConfig, Member } from '../models'; // ✨ Member 추가
 import { MemberDevice } from '../models/MemberDevice'; // ✨ MemberDevice 추가
@@ -164,7 +165,6 @@ router.post('/:boardId/posts', checkLevel, uploadFields, async (req: Request, re
     // ✨ 💡 [신규] 게시판 설정에 usePush가 켜져 있을 경우 푸시 알림 발송
     if (boardConfig.getDataValue('usePush') === true) {
       try {
-        // 레벨 10 회원들 중 푸시 알림 수신 동의한 기기 토큰들 조회
         const adminDevices = await MemberDevice.findAll({
           include: [{
             model: Member,
@@ -184,7 +184,6 @@ router.post('/:boardId/posts', checkLevel, uploadFields, async (req: Request, re
             },
             tokens: tokens, // FCM 다중 발송 토큰 배열
           };
-          // ✨ 변경됨: admin.messaging() 대신 getMessaging() 사용
           getMessaging().sendEachForMulticast(message)
             .then(response => {
               console.log(`푸시 알림 성공: ${response.successCount}건, 실패: ${response.failureCount}건`);
@@ -197,7 +196,6 @@ router.post('/:boardId/posts', checkLevel, uploadFields, async (req: Request, re
         console.error('푸시 알림 데이터베이스 조회 중 에러:', pushError);
       }
     }
-    // ✨ 푸시 알림 발송 로직 종료
 
     res.status(201).json({ success: true, data: newPost, message: '게시글이 작성되었습니다.' });
   } catch (error: any) {
@@ -273,6 +271,7 @@ router.put('/posts/:postId', checkLevel, uploadFields, async (req: Request, res:
     const attachmentFiles = files?.['attachments'] || [];
     const editorImages = files?.['editorImages'] || [];
 
+    // 1. 에디터 이미지 교체
     if (editorImages.length > 0) {
       let finalContent = updateData.content;
       editorImages.forEach((file: any) => {
@@ -283,17 +282,54 @@ router.put('/posts/:postId', checkLevel, uploadFields, async (req: Request, res:
       updateData.content = finalContent;
     }
 
-    if (attachmentFiles.length > 0) {
-      const uploadedMediaUrls = attachmentFiles.map((file: any) => file.location || `/uploads/${file.filename}`);
-      const firstImage = attachmentFiles.find(file => /\.(jpeg|jpg|gif|png|webp)$/i.test(file.originalname));
-      updateData.mediaUrls = JSON.stringify(uploadedMediaUrls);
-      updateData.thumbnailUrl = firstImage ? ((firstImage as any).location || `/uploads/${firstImage.filename}`) : null;
+    // 💡 2. 프론트에서 넘어온 유지할 파일(existingFiles) 처리
+    let existingFiles: string[] = [];
+    if (req.body.existingFiles) {
+      try {
+        existingFiles = JSON.parse(req.body.existingFiles);
+      } catch (e) {
+        console.error('existingFiles 파싱 에러:', e);
+      }
     }
+
+    // DB에 있던 원래 첨부파일 목록 가져오기
+    const currentMediaUrlsStr = post.getDataValue('mediaUrls');
+    const currentMediaUrls: string[] = currentMediaUrlsStr ? JSON.parse(currentMediaUrlsStr) : [];
+
+    // 💡 3. 삭제된 파일(원래 있었지만 프론트에서 제외된 파일) S3 삭제 처리
+    const filesToDelete = currentMediaUrls.filter((url: string) => !existingFiles.includes(url));
+    
+    for (const fileUrl of filesToDelete) {
+      try {
+        if (fileUrl.includes('amazonaws.com')) {
+          const urlObj = new URL(fileUrl);
+          const key = urlObj.pathname.substring(1); // 앞에 '/' 제거
+          await s3.send(new DeleteObjectCommand({
+            Bucket: process.env.AWS_S3_BUCKET_NAME as string,
+            Key: decodeURIComponent(key), // 한글/특수문자 파일명 고려
+          }));
+          console.log(`S3 파일 삭제 완료: ${key}`);
+        }
+      } catch (delErr) {
+        console.error('S3 파일 삭제 실패:', delErr);
+      }
+    }
+
+    // 💡 4. 파일 배열 병합 (유지할 기존 파일 + 새 업로드 파일)
+    const newUploadedMediaUrls = attachmentFiles.map((file: any) => file.location || `/uploads/${file.filename}`);
+    const finalMediaUrls = [...existingFiles, ...newUploadedMediaUrls];
+
+    updateData.mediaUrls = finalMediaUrls.length > 0 ? JSON.stringify(finalMediaUrls) : null;
+    
+    // 💡 5. 썸네일 재설정 (병합된 전체 목록 중 첫 번째 이미지로)
+    const firstImage = finalMediaUrls.find((url: string) => /\.(jpeg|jpg|gif|png|webp)$/i.test(url));
+    updateData.thumbnailUrl = firstImage || null;
 
     await Post.update(updateData, { where: { id: postId } });
     const updatedPost = await Post.findByPk(postId);
     res.status(200).json({ success: true, data: updatedPost, message: '게시글이 수정되었습니다.' });
   } catch (error) {
+    console.error('게시글 수정 오류:', error);
     res.status(500).json({ success: false, message: '서버 오류' });
   }
 });
@@ -311,6 +347,25 @@ router.delete('/posts/:postId', checkLevel, async (req: Request, res: Response) 
     
     if (!isAuthor && !isAdmin) {
       return res.status(403).json({ success: false, message: '삭제 권한이 없습니다.' });
+    }
+
+    // 게시글 삭제 전 S3 첨부파일 제거 (선택사항)
+    const mediaUrlsStr = post.getDataValue('mediaUrls');
+    if (mediaUrlsStr) {
+      try {
+        const urls: string[] = JSON.parse(mediaUrlsStr);
+        for (const url of urls) {
+          if (url.includes('amazonaws.com')) {
+            const key = new URL(url).pathname.substring(1);
+            await s3.send(new DeleteObjectCommand({
+              Bucket: process.env.AWS_S3_BUCKET_NAME as string,
+              Key: decodeURIComponent(key),
+            }));
+          }
+        }
+      } catch (delErr) {
+        console.error('게시글 삭제 중 S3 파일 삭제 실패:', delErr);
+      }
     }
 
     await Post.destroy({ where: { id: postId } });

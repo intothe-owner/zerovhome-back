@@ -11,6 +11,12 @@ import { VisitorLog } from './VisitorLog';
 import { Policy } from './Policy';
 import { MemberDevice } from './MemberDevice';
 
+// --- 새로 추가된 모델 임포트 (클린업 & 설문조사) ---
+import { CleanUpHousehold } from './CleanUpHousehold';
+import { SeniorCenterCleanUp } from './SeniorCenterCleanUp';
+import { Survey } from './Survey';
+import { SurveyResponse } from './SurveyResponse';
+
 // --- 테이블 간의 관계(Relation) 정의 ---
 
 // 1. 메뉴-메뉴 (자기참조)
@@ -43,10 +49,38 @@ Member.hasMany(MemberDevice, {
   as: 'devices', // 조회할 때 사용할 별칭
   onDelete: 'CASCADE' // 회원이 탈퇴(삭제)되면 기기 정보도 함께 삭제됨
 });
-
 MemberDevice.belongsTo(Member, { 
   foreignKey: 'memberId',
   as: 'member'
 });
 
-export { Menu, Page, BoardConfig, Post, Comment, SiteSetting, Member,MemberSetting,MemberDevice,VisitorLog,Policy };
+// --- 새로 추가된 클린업 & 설문조사 관계 설정 ---
+
+// 6. 설문조사 - 설문응답 (설문조사 삭제 시 응답 내역도 삭제)
+Survey.hasMany(SurveyResponse, { foreignKey: 'surveyId', onDelete: 'CASCADE' });
+SurveyResponse.belongsTo(Survey, { foreignKey: 'surveyId' });
+
+// 7. 클린업 가구 - 설문응답 (가구 데이터 삭제 시 해당 가구의 설문응답도 삭제)
+CleanUpHousehold.hasMany(SurveyResponse, { foreignKey: 'householdId', onDelete: 'CASCADE' });
+SurveyResponse.belongsTo(CleanUpHousehold, { foreignKey: 'householdId' });
+
+// 경로당(SeniorCenterCleanUp)은 현재 다른 테이블과 연관관계가 없으므로 단독으로 둡니다.
+
+export { 
+  Menu, 
+  Page, 
+  BoardConfig, 
+  Post, 
+  Comment, 
+  SiteSetting, 
+  Member,
+  MemberSetting,
+  MemberDevice,
+  VisitorLog,
+  Policy,
+  // 추가된 익스포트
+  CleanUpHousehold, 
+  SeniorCenterCleanUp, 
+  Survey, 
+  SurveyResponse 
+};
