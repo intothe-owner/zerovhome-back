@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import multer from "multer";
 import XLSX from "xlsx";
 import { Transaction } from "sequelize";
-import { sequelize } from "../db/sequelize";
+import { sequelize } from "../config/database";
 import { SeniorCenterCleanUp } from "../models/SeniorCenterCleanUp"; // 새로 만드실 모델
 import { getCoordsByAddress } from "../utils/geocoder";
 

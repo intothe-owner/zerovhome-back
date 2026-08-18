@@ -1,11 +1,11 @@
 import { Router, Request, Response } from "express";
 import { Op, WhereOptions } from "sequelize";
 import { CleanUpHousehold } from "../models/CleanUpHousehold";
-import { ErrorReport } from "../models";
+
 import multer from "multer";
 import fs from "fs";
 import path from "path";
-import { sequelize } from "../db/sequelize";
+import { sequelize } from "../config/database";
 import multerS3 from "multer-s3";
 import { DeleteObjectCommand, S3Client,PutObjectCommand } from "@aws-sdk/client-s3";
 // ✅ sharp 추가
@@ -180,10 +180,7 @@ router.get("/list", async (req: Request, res: Response) => {
       },
     });
   } catch (err: any) {
-    await ErrorReport.create({
-        section:'클린업 목록',
-        error:err?.message??String(err)
-      })
+    
     res.status(500).json({ message: "서버 오류" });
   }
 });
@@ -269,10 +266,7 @@ router.put("/:id/photos", (req: Request, res: Response) => {
       });
     } catch (err: any) {
       console.error("사진 업로드 내부 에러:", err);
-      await ErrorReport.create({
-        section:'사진업로드',
-        error:err?.message??String(err)
-      })
+      
       return res.status(500).json({
         message: "failed to upload photos",
         error: err?.message ?? String(err),
@@ -384,8 +378,11 @@ router.patch("/:id/archive", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { is_complete } = req.body;
-
-    const household = await CleanUpHousehold.findByPk(id);
+    const idNum = Number(id);
+    if (!Number.isInteger(idNum) || idNum <= 0) {
+      return res.status(400).json({ ok: false, message: "유효하지 않은 경로당 ID입니다." });
+    }
+    const household = await CleanUpHousehold.findByPk(idNum);
 
     if (!household) {
       await tx.rollback();
