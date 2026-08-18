@@ -113,7 +113,7 @@ async function uploadBase64SignatureToS3(dataUrl: string, householdId: number): 
   const s3Key = `uploads/signatures/${fileName}`;
 
   const uploadCommand = new PutObjectCommand({
-    Bucket: process.env.AWS_S3_BUCKET!,
+    Bucket: process.env.AWS_S3_BUCKET_NAME!,
     Key: s3Key,
     Body: buffer,
     ContentType: contentType,
@@ -122,7 +122,7 @@ async function uploadBase64SignatureToS3(dataUrl: string, householdId: number): 
   await s3.send(uploadCommand);
 
   // S3 전체 URL 반환
-  return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+  return `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
 }
 function saveBase64Signature(base64: string, householdId: number) {
   const match = base64.match(/^data:image\/png;base64,(.+)$/);
@@ -250,13 +250,13 @@ router.post("/submit", async (req: Request, res: Response) => {
     const reportMemo = String(body.reportMemo ?? "").trim();
     
     const uploadCommand = new PutObjectCommand({
-      Bucket: process.env.AWS_S3_BUCKET!,
+      Bucket: process.env.AWS_S3_BUCKET_NAME!,
       Key: s3Key,
       Body: buffer,
       ContentType: contentType,
     });
     await s3.send(uploadCommand);
-    const finalSignatureUrl = `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+    const finalSignatureUrl = `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
 
     // 기본 파라미터 체크 로직 (기존과 동일)
     if (!Number.isInteger(householdId) || householdId <= 0) { await tx.rollback(); return res.status(400).json({ message: "대상자 정보 오류" }); }

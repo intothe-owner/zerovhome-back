@@ -2,7 +2,18 @@
 import { DataTypes, Model } from 'sequelize';
 import { sequelize } from '../config/database';
 
-export class SupportFund extends Model {}
+export class SupportFund extends Model {
+  public id!: number;
+  public category!: string | null;
+  public title!: string;
+  public period!: string | null;
+  public department!: string | null;
+  public detailUrl!: string | null;
+  
+  public readonly createdAt!: Date;
+  public readonly updatedAt!: Date;
+
+}
 
 SupportFund.init({
   id: { 

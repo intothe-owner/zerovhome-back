@@ -14,6 +14,14 @@ import authRoutes from './routes/authRoutes';
 import popupRoutes from './routes/popupRoutes';
 import visitorRoutes from './routes/visitorRoutes';
 import memberRoutes from './routes/memberRoutes';
+import supportFundRoutes from './routes/supportFundRoutes';
+import households from "./routes/households";
+import importRouter from "./routes/import";
+import seniorCenterImport from "./routes/seniorCenterImport";
+import surveyRouter from "./routes/survey";
+import WorkReportRouter from "./routes/workReports";
+import seniorCenters from "./routes/seniorCenters";
+import seniorReports from "./routes/seniorReports";
 import path from 'path';
 import './config/firebase';
 dotenv.config();
@@ -57,8 +65,16 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/boards', boardRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/popups', popupRoutes);
+app.use('/api/funds', supportFundRoutes);
 app.use('/api/visitors', visitorRoutes);
 app.use('/api/members', memberRoutes);
+app.use("/api/households", households);
+app.use("/api/import", importRouter);
+app.use("/api/senior-import", seniorCenterImport);
+app.use("/api/survey", surveyRouter);
+app.use("/api/work-reports", WorkReportRouter);
+app.use("/api/senior", seniorCenters);
+app.use("/api/senior-centers", seniorReports);
 
 // DB 동기화 및 서버 실행
 sequelize.sync({ alter: true }) // alter: true는 스키마 변경 시 테이블을 자동으로 수정해 줍니다.

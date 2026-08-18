@@ -51,10 +51,10 @@ router.put(
       // 3. S3 업로드 (문자열 centerId 대신 숫자 centerIdNum 사용)
       const s3Key = `senior-reports/${centerIdNum}/${category}/${crypto.randomUUID()}.jpg`;
       await s3.send(new PutObjectCommand({
-        Bucket: process.env.AWS_S3_BUCKET!,
+        Bucket: process.env.AWS_S3_BUCKET_NAME!,
         Key: s3Key, Body: processedBuffer, ContentType: "image/jpeg",
       }));
-      const imageUrl = `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+      const imageUrl = `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
 
       // 4. 본체 테이블 JSON 컬럼 업데이트 (숫자 centerIdNum 전달)
       const center = await SeniorCenterCleanUp.findByPk(centerIdNum);

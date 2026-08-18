@@ -44,7 +44,7 @@ const fileFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
 const upload = multer({
   storage: multerS3({
     s3: s3,
-    bucket: process.env.AWS_S3_BUCKET!, // 버킷 이름
+    bucket: process.env.AWS_S3_BUCKET_NAME!, // 버킷 이름
     contentType: multerS3.AUTO_CONTENT_TYPE, // 자동으로 mimetype 설정 (브라우저에서 열기 가능하게)
     //acl: 'public-read', // 권한 설정 (필요에 따라 변경)
     key: (_req, file, cb) => {
@@ -88,15 +88,15 @@ async function processAndUploadImage(file: Express.Multer.File): Promise<string 
   const s3Key = `uploads/zerovapp/${Date.now()}_${Math.round(Math.random() * 1e9)}_${safeBaseName}${ext}`;
 
   await s3.send(new PutObjectCommand({
-    Bucket: process.env.AWS_S3_BUCKET!,
+    Bucket: process.env.AWS_S3_BUCKET_NAME!,
     Key: s3Key,
     Body: processedBuffer,
     ContentType: "image/jpeg",
   }));
 
-  return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+  return `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
 }
-function toPublicPath(file?: any) {
+function toPublicPath(file?: any) { 
   if (!file) return null;
   // S3 업로드 시에는 file.location에 전체 URL이 담겨 있습니다.
   return file.location || null;
@@ -113,7 +113,7 @@ async function deleteOldFile(fileUrl?: string | null) {
     const bucketKey = url.pathname.replace(/^\/+/, "");
 
     const command = new DeleteObjectCommand({
-      Bucket: process.env.AWS_S3_BUCKET!,
+      Bucket: process.env.AWS_S3_BUCKET_NAME!,
       Key: bucketKey,
     });
 
