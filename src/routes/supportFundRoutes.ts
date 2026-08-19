@@ -4,7 +4,7 @@ import * as cheerio from 'cheerio';
 import { Op } from 'sequelize'; // 데이터베이스 검색 연산자 임포트
 import puppeteer from 'puppeteer';
 import { SupportFund } from '../models/SupportFund';
-
+import https from 'https';
 const router = Router();
 
 // ==========================================
@@ -370,5 +370,163 @@ router.get('/', async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: '조회 실패' });
   }
 });
+// ==========================================
+// 4. 한국자활복지개발원 파싱 API
+// ==========================================
+router.post('/scrape/kdissw', async (req: Request, res: Response) => {
+  try {
+    const results: any[] = [];
+    const baseUrl = 'https://www.kdissw.or.kr';
+    const targetUrl = 'https://www.kdissw.or.kr/board.es?mid=a10501040000&bid=0046';
 
+    console.log('--- 🔍 [한국자활] 크롤링 시작 ---');
+
+    const response = await axios.get(targetUrl, {
+      httpsAgent: new https.Agent({ rejectUnauthorized: false }), // SSL 에러 우회
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    });
+
+    const $ = cheerio.load(response.data);
+    const listItems = $('.tstyle_list .dbody ul');
+
+    listItems.each((_, ulElement) => {
+      const aTag = $(ulElement).find('li.title a').first();
+      if (!aTag.length) return;
+
+      // HTML의 title 속성 또는 텍스트를 가져와서 불필요한 공백을 하나로 압축
+      let rawTitle = aTag.attr('title') || aTag.text();
+      let title = rawTitle.replace(/\s+/g, ' ').trim();
+      if (!title) return;
+
+      const author = $(ulElement).find('li[aria-title="작성자"]').text().trim();
+      const department = author || '한국자활복지개발원';
+      const category = '한국자활';
+
+      let detailUrl = '';
+      const href = aTag.attr('href') || '';
+      if (href) {
+        if (href.startsWith('http')) detailUrl = href;
+        else detailUrl = baseUrl + (href.startsWith('/') ? href : `/${href}`);
+      }
+
+      let period = '';
+      const dateText = $(ulElement).text(); 
+      const dateMatch = dateText.match(/\d{4}[\/\.\-]\d{2}[\/\.\-]\d{2}/);
+      if (dateMatch) {
+        period = dateMatch[0];
+      } else {
+        period = '-';
+      }
+
+      results.push({ category, title, period, department, detailUrl });
+    });
+
+    let newCount = 0;
+    let updateCount = 0;
+
+    const validResults = results.filter(item => item && item.title && typeof item.title === 'string');
+
+    for (const item of validResults) {
+      // 1. DB에 동일한 제목의 공고가 있는지 찾습니다. (공백 차이를 방어하기 위해 정확한 일치 또는 like 검색 활용 가능)
+      // 여기서는 정확한 title 일치 여부를 확인합니다.
+      const existingFund = await SupportFund.findOne({ where: { title: item.title } });
+
+      if (existingFund) {
+        // 2-A. 이미 있다면 최신 정보(기간, URL 등)로 업데이트합니다.
+        await existingFund.update(item);
+        updateCount++;
+      } else {
+        // 2-B. 없다면 새 공고로 DB에 추가합니다.
+        await SupportFund.create(item);
+        newCount++;
+      }
+    }
+
+    console.log(`[한국자활] 크롤링 및 DB 저장 완료! (신규: ${newCount}개, 갱신: ${updateCount}개)`);
+    res.json({
+      success: true,
+      message: `한국자활 데이터 갱신 완료 (신규 추가: ${newCount}개 / 기존 업데이트: ${updateCount}개)`,
+    });
+  } catch (error) {
+    console.error('한국자활 크롤링 에러:', error);
+    res.status(500).json({ success: false, message: '서버 오류 발생' });
+  }
+});
+
+// ==========================================
+// 5. 부산광역자활센터 파싱 API
+// ==========================================
+router.post('/scrape/busanjh', async (req: Request, res: Response) => {
+  try {
+    const results: any[] = [];
+    const baseUrl = 'https://www.busanjh.or.kr';
+    const targetUrl = 'https://www.busanjh.or.kr/bbs/board.php?bo_table=notice2&sca=%EA%B3%B5%EC%A7%80';
+
+    console.log('--- 🔍 [부산자활] 크롤링 시작 ---');
+
+    const response = await axios.get(targetUrl, {
+      httpsAgent: new https.Agent({ rejectUnauthorized: false }), // SSL 에러 우회
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    });
+    
+    const $ = cheerio.load(response.data);
+    const listItems = $('.bbs-list > ul > li');
+
+    listItems.each((_, element) => {
+      const aTag = $(element).find('a.aline');
+      if (!aTag.length) return;
+
+      // HTML의 title 속성 또는 텍스트를 가져와서 불필요한 공백을 하나로 압축
+      let rawTitle = aTag.attr('title') || aTag.text();
+      let title = rawTitle.replace(/\s+/g, ' ').trim();
+      if (!title) return;
+
+      const category = '부산자활';
+      const author = $(element).find('.pname').text().trim();
+      const department = author || '부산광역자활센터';
+
+      let detailUrl = '';
+      const hrefAttr = aTag.attr('href') || '';
+      if (hrefAttr) {
+        if (hrefAttr.startsWith('http')) detailUrl = hrefAttr;
+        else detailUrl = baseUrl + '/bbs/' + hrefAttr.replace(/^\.\//, '');
+      }
+
+      let period = $(element).find('span.date').text().trim();
+      const dateMatch = period.match(/\d{4}[\.\-]\d{2}[\.\-]\d{2}/);
+      period = dateMatch ? dateMatch[0] : period;
+
+      results.push({ category, title, period, department, detailUrl });
+    });
+
+    let newCount = 0;
+    let updateCount = 0;
+
+    const validResults = results.filter(item => item && item.title && typeof item.title === 'string');
+
+    for (const item of validResults) {
+      // 1. DB에 동일한 제목의 공고가 있는지 찾습니다.
+      const existingFund = await SupportFund.findOne({ where: { title: item.title } });
+
+      if (existingFund) {
+        // 2-A. 이미 있다면 최신 정보(기간, URL 등)로 업데이트합니다.
+        await existingFund.update(item);
+        updateCount++;
+      } else {
+        // 2-B. 없다면 새 공고로 DB에 추가합니다.
+        await SupportFund.create(item);
+        newCount++;
+      }
+    }
+
+    console.log(`[부산자활] 크롤링 및 DB 저장 완료! (신규: ${newCount}개, 갱신: ${updateCount}개)`);
+    res.json({
+      success: true,
+      message: `부산광역자활센터 데이터 갱신 완료 (신규 추가: ${newCount}개 / 기존 업데이트: ${updateCount}개)`,
+    });
+  } catch (error) {
+    console.error('부산자활 크롤링 에러:', error);
+    res.status(500).json({ success: false, message: '서버 오류 발생' });
+  }
+});
 export default router;
