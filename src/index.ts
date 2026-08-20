@@ -49,8 +49,8 @@ console.log(process.env.GEMINI_API_KEY);
 app.use(cors(corsOptions));
 
 // 💡 2. Body Parser 설정
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // 💡 3. 정적 파일 제공 (CORS와 Body 파싱이 적용된 후 실행)
 app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
