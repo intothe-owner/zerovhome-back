@@ -57,12 +57,12 @@ MemberDevice.belongsTo(Member, {
 // --- 새로 추가된 클린업 & 설문조사 관계 설정 ---
 
 // 6. 설문조사 - 설문응답 (설문조사 삭제 시 응답 내역도 삭제)
-Survey.hasMany(SurveyResponse, { foreignKey: 'surveyId', onDelete: 'CASCADE' });
-SurveyResponse.belongsTo(Survey, { foreignKey: 'surveyId' });
+Survey.hasMany(SurveyResponse, { foreignKey: 'surveyId', as: 'surveyResponses', onDelete: 'CASCADE' });
+SurveyResponse.belongsTo(Survey, { foreignKey: 'surveyId', as: 'survey' });
 
 // 7. 클린업 가구 - 설문응답 (가구 데이터 삭제 시 해당 가구의 설문응답도 삭제)
-CleanUpHousehold.hasMany(SurveyResponse, { foreignKey: 'householdId', onDelete: 'CASCADE' });
-SurveyResponse.belongsTo(CleanUpHousehold, { foreignKey: 'householdId' });
+CleanUpHousehold.hasMany(SurveyResponse, { foreignKey: 'householdId', onDelete: 'CASCADE',as: 'surveyResponses', });
+SurveyResponse.belongsTo(CleanUpHousehold, { foreignKey: 'householdId',as: 'household' });
 
 // 경로당(SeniorCenterCleanUp)은 현재 다른 테이블과 연관관계가 없으므로 단독으로 둡니다.
 

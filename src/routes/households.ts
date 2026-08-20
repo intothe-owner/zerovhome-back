@@ -374,6 +374,7 @@ router.get("/:id", async (req: Request, res: Response) => {
  * PATCH /api/households/:id/archive
  */
 router.patch("/:id/archive", async (req: Request, res: Response) => {
+  console.log('상태변경')
   const tx = await sequelize.transaction(); // 순서 일관성을 위해 트랜잭션 시작
   try {
     const { id } = req.params;

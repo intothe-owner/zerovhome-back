@@ -166,22 +166,35 @@ router.post("/:householdId/pdf", async (req: Request, res: Response) => {
 
     // JSON 배열을 매핑하여 PDF 생성용 객체 생성
     for (const q of questionsJSON) {
-      const matched = answersJSON.find((a: any) => a.questionId === q.id);
+      const matched = answersJSON.find((a: any) => String(a.questionId) === String(q.id));
       
       let answerText = "-";
-      let choices = [];
-      if (q.type === "multiple" && matched) {
-         const selectedOpt = q.options?.find((opt:any) => opt.optionNo === matched.selectedOptionNo);
-         answerText = selectedOpt ? selectedOpt.optionText : "-";
-         choices = q.options?.map((opt:any) => ({
-             optionNo: opt.optionNo, optionText: opt.optionText, selected: matched.selectedOptionNo === opt.optionNo
-         }));
-      } else if(q.type === "subjective" && matched) {
-         answerText = matched.subjectiveAnswer || "-";
+      let choices: any[] = [];
+
+      if (q.type === "multiple") {
+        const optionsArr: string[] = q.options || [];
+        // 문자열 배열을 순회하며 optionNo와 optionText 객체로 변환
+        choices = optionsArr.map((optText: string, idx: number) => {
+          const optionNo = idx + 1;
+          const isSelected = Number(matched?.selectedOptionNo) === optionNo;
+          if (isSelected) {
+            answerText = optText;
+          }
+          return {
+            optionNo,
+            optionText: optText,
+            selected: isSelected,
+          };
+        });
+      } else if (q.type === "subjective") {
+        answerText = matched?.subjectiveAnswer || "-";
       }
 
       surveyAnswers.push({
-        question: q.question, type: q.type, answer: answerText, choices
+        question: q.question, 
+        type: q.type, 
+        answer: answerText, 
+        choices
       });
     }
 
@@ -224,6 +237,7 @@ router.post("/:householdId/pdf", async (req: Request, res: Response) => {
     res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeRFC5987ValueChars(makeSafePdfFileName(title))}`);
     return res.send(pdfBuffer);
   } catch (error: any) {
+    console.log(error);
     await tx.rollback();
     return res.status(500).json({ message: "오류 발생" });
   }

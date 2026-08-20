@@ -346,7 +346,6 @@ router.post("/submit", async (req: Request, res: Response) => {
     });
   }
 });
-
 /**
  * 특정 household의 가장 최근 설문 응답 조회
  */
@@ -366,20 +365,13 @@ router.get("/response/household/:householdId", async (req: Request, res: Respons
       include: [
         {
           model: Survey,
-          as: "survey",
-          include: [
-            {
-              model: Survey,
-              as: "survey",
-              // 💡 문항(questions)과 보기(options)는 이제 Survey 테이블의 JSON 컬럼으로 
-              // 통째로 딸려오기 때문에 더 이상 하위 include가 필요 없습니다!
-            },
-            {
-              model: CleanUpHousehold,
-              as: "household",
-              required: false,
-            },
-          ],
+          as: "survey", // 💡 필수: 모델에 정의한 별칭(소문자)과 정확히 일치시켜야 합니다.
+          required: false,
+        },
+        {
+          model: CleanUpHousehold,
+          as: "household", // 💡 필수: 모델에 정의한 별칭(소문자)과 정확히 일치시켜야 합니다.
+          required: false,
         },
       ],
     });
