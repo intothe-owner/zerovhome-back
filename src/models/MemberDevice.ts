@@ -20,7 +20,6 @@ MemberDevice.init({
   deviceToken: { 
     type: DataTypes.STRING, 
     allowNull: false, 
-    unique: true, 
     comment: 'FCM 등 푸시 서비스에서 발급받은 기기 토큰' 
   },
   deviceType: { 

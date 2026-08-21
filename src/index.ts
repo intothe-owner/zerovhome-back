@@ -76,20 +76,6 @@ app.use("/api/work-reports", WorkReportRouter);
 app.use("/api/senior", seniorCenters);
 app.use("/api/senior-centers", seniorReports);
 
-// app.ts 의 모든 라우터(app.use) 설정들 맨 아래에 추가하세요.
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error('🚨 [전역 에러 캐치] 숨겨진 에러 발생:', {
-    message: err.message,
-    name: err.name,
-    type: err.type,
-    status: err.status,
-  });
-  
-  res.status(err.status || 500).json({ 
-    success: false, 
-    message: err.message || '서버 전역 에러' 
-  });
-});
 // DB 동기화 및 서버 실행
 sequelize.sync({ alter: true }) // alter: true는 스키마 변경 시 테이블을 자동으로 수정해 줍니다.
   .then(() => {
@@ -99,5 +85,5 @@ sequelize.sync({ alter: true }) // alter: true는 스키마 변경 시 테이블
     });
   })
   .catch((error) => {
-    console.error('❌ 데이터베이스 연결 실패:', error);
+    console.error('❌ 데이터베이스 연결 실패:', error); 
   });

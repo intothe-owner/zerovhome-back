@@ -13,7 +13,7 @@ const router = Router();
 router.post('/scrape', async (req: Request, res: Response) => {
   try {
     const results: any = [];
-    const maxPage = 10;
+    const maxPage = 1;
     const baseUrl = 'https://www.bizinfo.go.kr';
 
     console.log('크롤링을 시작합니다...');
@@ -83,7 +83,7 @@ router.post('/scrape', async (req: Request, res: Response) => {
 });
 router.post('/scrape/sbiz24', async (req: Request, res: Response) => {
   try {
-    const maxPage = 10;
+    const maxPage = 1;
     const baseUrl = 'https://www.sbiz24.kr';
     const results: any[] = [];
 
