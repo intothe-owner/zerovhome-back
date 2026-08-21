@@ -87,34 +87,49 @@ router.post('/register', uploadAny.single('approvalFile'), async (req: Request, 
 // 2. 로그인 API (기존 유지: 레벨이 승인 대기 레벨(0)인 경우만 차단)
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { loginId, password } = req.body;
+    // 💡 프론트엔드에서 로그인 시 fcm 토큰과 기기 ID도 같이 받습니다.
+    const { loginId, password, deviceToken, deviceId } = req.body;
 
-    // 사용자 찾기
     const user = await Member.findOne({ where: { loginId } });
     if (!user) {
       return res.status(401).json({ success: false, message: '아이디 또는 비밀번호가 일치하지 않습니다.' });
     }
 
-    // 승인 대기 상태 확인 로직
     const setting = await MemberSetting.findByPk(1);
     const useApproval = setting ? setting.getDataValue('useApproval') : false;
     const approvalWaitLevel = setting ? (setting.getDataValue('approvalWaitLevel') ?? 0) : 0;
 
-    // ✨ 일반회원은 레벨 1이므로 이 차단 로직을 무사히 통과합니다.
     if (useApproval && user.getDataValue('level') === approvalWaitLevel) {
       return res.status(403).json({ success: false, message: '관리자 승인 대기 중입니다. 승인 완료 후 로그인 가능합니다.' });
     }
 
-    // 비밀번호 검증
     const isMatch = await bcrypt.compare(password, user.getDataValue('password') as string);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: '아이디 또는 비밀번호가 일치하지 않습니다.' });
     }
 
-    // JWT 토큰 발급 (유효기간 30일)
+    const memberId = user.getDataValue('id');
+
+    // ⭐ 핵심: 로그인 성공 직후, 바로 member_device 테이블에 토큰 저장/업데이트
+    if (deviceToken) {
+      const [device, created] = await MemberDevice.findOrCreate({
+        where: { deviceId: deviceId || deviceToken },
+        defaults: {
+          memberId,
+          deviceToken,
+          deviceType: 'ANDROID',
+          deviceId: deviceId || 'unknown'
+        }
+      });
+
+      if (!created) {
+        await device.update({ deviceToken, lastUsedAt: new Date(), memberId });
+      }
+    }
+
     const token = jwt.sign(
       { 
-        id: user.getDataValue('id'), 
+        id: memberId, 
         loginId: user.getDataValue('loginId'), 
         name: user.getDataValue('name'),
         level: user.getDataValue('level')
@@ -128,7 +143,7 @@ router.post('/login', async (req: Request, res: Response) => {
       message: '로그인 성공',
       token,
       user: {
-        id: user.getDataValue('id'),
+        id: memberId,
         loginId: user.getDataValue('loginId'),
         name: user.getDataValue('name'),
         level: user.getDataValue('level')
