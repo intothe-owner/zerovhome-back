@@ -89,6 +89,7 @@ router.post('/login', async (req: Request, res: Response) => {
   try {
     // 💡 프론트엔드에서 로그인 시 fcm 토큰과 기기 ID도 같이 받습니다.
     const { loginId, password, deviceToken, deviceId } = req.body;
+    console.log(req.body);
 
     const user = await Member.findOne({ where: { loginId } });
     if (!user) {
