@@ -87,5 +87,5 @@ sequelize.sync({ alter: true }) // alter: true는 스키마 변경 시 테이블
     });
   })
   .catch((error) => {
-    console.error('❌ 데이터베이스 연결 실패:', error); 
+    console.error('❌ 데이터베이스 연결 실패:', error);  
   });
