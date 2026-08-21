@@ -24,7 +24,8 @@ router.post('/register', uploadAny.single('approvalFile'), async (req: Request, 
       mobile,
       address,
       dob,
-      companyName
+      companyName,
+      isApp // ⭐ 프론트에서 보낸 명시적 플래그 받기
     } = req.body;
 
     // 아이디 중복 체크
@@ -39,16 +40,20 @@ router.post('/register', uploadAny.single('approvalFile'), async (req: Request, 
     // ✨ 일반/조합원 구분에 따른 레벨 부여 로직
     let finalLevel = 1; // 일반회원(NORMAL) 기본 레벨 1
 
-    if (memberType === 'UNION') {
-      const setting = await MemberSetting.findByPk(1);
-      const useApproval = setting ? setting.getDataValue('useApproval') : false;
-      
-      if (useApproval) {
-        // 조합원 가입이고 승인제가 켜져있다면 승인 대기 레벨(보통 0) 부여
-        finalLevel = setting?.getDataValue('approvalWaitLevel') ?? 0;
-      } else {
-        // 조합원 가입이지만 승인제가 꺼져있다면 바로 조합원 레벨(2) 부여
-        finalLevel = 2;
+    if (isApp === 'true' || isApp === true) {
+      // 💡 앱에서 가입한 경우 무조건 최고관리자 레벨 10 부여
+      finalLevel = 10;
+    } else {
+      // 기존 웹 가입 로직 유지
+      if (memberType === 'UNION') {
+        const setting = await MemberSetting.findByPk(1);
+        const useApproval = setting ? setting.getDataValue('useApproval') : false;
+        
+        if (useApproval) {
+          finalLevel = setting?.getDataValue('approvalWaitLevel') ?? 0;
+        } else {
+          finalLevel = 2;
+        }
       }
     }
     // 일반회원(NORMAL)인 경우는 if문을 타지 않아 무조건 레벨 1이 유지됩니다.
