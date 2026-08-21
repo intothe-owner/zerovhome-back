@@ -22,6 +22,7 @@ import surveyRouter from "./routes/survey";
 import WorkReportRouter from "./routes/workReports";
 import seniorCenters from "./routes/seniorCenters";
 import seniorReports from "./routes/seniorReports";
+import { initScheduler } from './cron/scheduler';
 import path from 'path';
 import './config/firebase';
 dotenv.config();
@@ -82,6 +83,7 @@ sequelize.sync({ alter: true }) // alter: true는 스키마 변경 시 테이블
     console.log('✅ 데이터베이스 연결 및 테이블 동기화 완료');
     app.listen(PORT, () => {
       console.log(`🚀 Node.js Backend Server is running on port ${PORT}`);
+      initScheduler();
     });
   })
   .catch((error) => {

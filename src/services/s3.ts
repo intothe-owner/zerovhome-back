@@ -1,7 +1,7 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 const REGION = process.env.AWS_REGION!;
-const BUCKET = process.env.AWS_S3_BUCKET_NAME!;
+const BUCKET = process.env.AWS_S3_BUCKET!;
 
 // ✅ S3 Client (권장: IAM Role/환경변수 자격증명)
 const s3 = new S3Client({
