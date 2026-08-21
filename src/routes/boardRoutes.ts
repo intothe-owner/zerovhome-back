@@ -471,5 +471,47 @@ router.delete('/comments/:commentId', checkLevel, async (req: Request, res: Resp
     res.status(500).json({ success: false, message: '서버 오류' });
   }
 });
+router.get('/test-push', async (req: Request, res: Response) => {
+  try {
+    // 1. 쿼리 스트링이나 임의의 테스트용 토큰 설정
+    // 예시: 브라우저에서 /api/boards/test-push?token=원하는토큰값 형식으로 테스트 가능
+    const testToken = (req.query.token as string) || '여기에_테스트할_실제_FCM토큰을_입력하세요';
 
+    if (!testToken || testToken === '여기에_테스트할_실제_FCM토큰을_입력하세요') {
+      return res.status(400).json({ 
+        success: false, 
+        message: '테스트할 FCM 토큰을 쿼리스트링(?token=토큰값)으로 전달해주세요.' 
+      });
+    }
+
+    // 2. FCM 메시지 페이로드 구성
+    const message = {
+      notification: {
+        title: '[테스트 알림] 현장 업무 시스템',
+        body: 'GET 요청으로 발송된 실시간 푸시 테스트입니다.'
+      },
+      data: {
+        push_url: 'http://www.zerov.co.kr/app/clean' // 알림 터치 시 이동할 웹뷰 URL
+      },
+      token: testToken, // 단일 토큰 발송
+    };
+
+    // 3. Firebase Admin을 통한 푸시 전송
+    const response = await getMessaging().send(message);
+
+    console.log('테스트 푸시 발송 성공:', response);
+    res.status(200).json({ 
+      success: true, 
+      message: '테스트 푸시가 성공적으로 발송되었습니다.',
+      firebaseResponse: response 
+    });
+  } catch (error: any) {
+    console.error('테스트 푸시 발송 오류:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '푸시 발송 중 오류가 발생했습니다.', 
+      error: error.message 
+    });
+  }
+});
 export default router;
