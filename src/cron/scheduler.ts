@@ -9,7 +9,7 @@ import {
 
 export const initScheduler = () => {
   // 매일 오전 8시 00분
-  cron.schedule('10 13 * * *', async () => {
+  cron.schedule('00 8 * * *', async () => {
     try {
       console.log('⏰ [스케줄러] 기업마당 자동 수집 시작');
       await scrapeBizInfo();
@@ -19,7 +19,7 @@ export const initScheduler = () => {
   });
 
   // 매일 오전 8시 10분
-  cron.schedule('13 13 * * *', async () => {
+  cron.schedule('10 8 * * *', async () => {
     try {
       console.log('⏰ [스케줄러] 소상공인24 자동 수집 시작');
       await scrapeSbiz24();
@@ -28,18 +28,10 @@ export const initScheduler = () => {
     }
   }); 
 
-  // 매일 오전 8시 20분
-  cron.schedule('15 13 * * *', async () => {
-    try {
-      console.log('⏰ [스케줄러] K-Startup 자동 수집 시작');
-      await scrapeKStartup();
-    } catch (error) {
-      console.error('K-Startup 스케줄러 에러:', error);
-    }
-  });
+  
 
-  // 매일 오전 8시 30분
-  cron.schedule('17 13 * * *', async () => {
+  // 매일 오전 8시 20분
+  cron.schedule('20 8 * * *', async () => {
     try {
       console.log('⏰ [스케줄러] 자활센터(한국/부산) 자동 수집 시작');
       await scrapeKdissw();

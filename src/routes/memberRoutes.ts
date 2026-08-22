@@ -9,6 +9,7 @@ const router = Router();
 // 1. 회원 목록 조회 (관리자 전용: Level 9 이상)
 router.get('/', checkLevel, async (req: Request, res: Response) => {
   try {
+
     if (req.user.level < 9) {
       return res.status(403).json({ success: false, message: '회원 목록을 볼 권한이 없습니다.' });
     }
@@ -20,6 +21,58 @@ router.get('/', checkLevel, async (req: Request, res: Response) => {
     const searchType = req.query.searchType as string;
     const keyword = req.query.keyword as string;
     const levelFilter = req.query.level as string; // ✨ 레벨 필터 수신
+
+    const where: any = {};
+    
+    if (keyword) {
+      if (searchType === 'loginId') {
+        where.loginId = { [Op.like]: `%${keyword}%` };
+      } else if (searchType === 'name') {
+        where.name = { [Op.like]: `%${keyword}%` };
+      }
+    }
+
+    // ✨ 특정 레벨 필터 적용 (예: 승인 대기 회원 조회 시 '0' 전달)
+    if (levelFilter !== undefined && levelFilter !== "") {
+      where.level = Number(levelFilter);
+    }
+
+    const { count, rows: members } = await Member.findAndCountAll({
+      where, 
+      attributes: { exclude: ['password'] }, 
+      order: [['createdAt', 'DESC']],
+      limit,
+      offset
+    });
+
+    res.status(200).json({ 
+      success: true, 
+      data: members,
+      pagination: {
+        totalItems: count,
+        currentPage: page,
+        itemsPerPage: limit,
+        totalPages: Math.ceil(count / limit)
+      }
+    });
+  } catch (error) {
+    console.error('회원 목록 조회 오류:', error);
+    res.status(500).json({ success: false, message: '서버 오류' });
+  }
+});
+
+router.get('/members',  async (req: Request, res: Response) => {
+  try {
+    
+    
+    
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+
+    const searchType = req.query.searchType as string;
+    const keyword = req.query.keyword as string;
+    const levelFilter:string = "10"; // ✨ 레벨 필터 수신
 
     const where: any = {};
     

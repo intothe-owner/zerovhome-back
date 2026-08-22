@@ -17,6 +17,7 @@ router.get('/', async (req: Request, res: Response) => {
         nightModeEndTime: '06:00:00',
       }
     });
+    console.log(setting);
     res.status(200).json({ success: true, data: setting });
   } catch (error) {
     console.error('사이트 설정 조회 오류:', error);

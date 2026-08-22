@@ -17,6 +17,12 @@ import { SeniorCenterCleanUp } from './SeniorCenterCleanUp';
 import { Survey } from './Survey';
 import { SurveyResponse } from './SurveyResponse';
 
+// 예약신청 테이블
+import { ServiceCategory } from './ServiceCategory';
+import { ServicePrice } from './ServicePrice';
+import { Reservation } from './Reservation';
+import { WorkReport } from './WorkReport';
+
 // --- 테이블 간의 관계(Relation) 정의 ---
 
 // 1. 메뉴-메뉴 (자기참조)
@@ -66,6 +72,27 @@ SurveyResponse.belongsTo(CleanUpHousehold, { foreignKey: 'householdId',as: 'hous
 
 // 경로당(SeniorCenterCleanUp)은 현재 다른 테이블과 연관관계가 없으므로 단독으로 둡니다.
 
+// 1. 카테고리 1차-2차 관계 (자기 참조)
+ServiceCategory.hasMany(ServiceCategory, { as: 'subCategories', foreignKey: 'parentId', onDelete: 'CASCADE' });
+ServiceCategory.belongsTo(ServiceCategory, { as: 'parentCategory', foreignKey: 'parentId' });
+
+// 2. 카테고리 - 요금 설정 (1:N)
+ServiceCategory.hasMany(ServicePrice, { foreignKey: 'categoryId', onDelete: 'CASCADE' });
+ServicePrice.belongsTo(ServiceCategory, { foreignKey: 'categoryId' });
+
+// 3. 예약 - 카테고리 참조
+Reservation.belongsTo(ServiceCategory, { as: 'category1', foreignKey: 'category1Id' });
+Reservation.belongsTo(ServiceCategory, { as: 'category2', foreignKey: 'category2Id' });
+
+// 4. 예약 - 회원(직원) 할당 관계
+// 기존에 존재하는 Member 모델을 직원으로 사용합니다.
+Member.hasMany(Reservation, { foreignKey: 'workerId', as: 'assignedTasks' });
+Reservation.belongsTo(Member, { foreignKey: 'workerId', as: 'worker' });
+
+// 5. 예약 - 작업 보고서 (1:1)
+Reservation.hasOne(WorkReport, { foreignKey: 'reservationId', onDelete: 'CASCADE' });
+WorkReport.belongsTo(Reservation, { foreignKey: 'reservationId' });
+
 export { 
   Menu, 
   Page, 
@@ -82,5 +109,9 @@ export {
   CleanUpHousehold, 
   SeniorCenterCleanUp, 
   Survey, 
-  SurveyResponse 
+  SurveyResponse,
+  ServiceCategory,
+  ServicePrice,
+  Reservation,
+  WorkReport 
 };
