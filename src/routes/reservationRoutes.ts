@@ -22,6 +22,7 @@ router.post('/', async (req: Request, res: Response) => {
       detailAddress,
       reservationDate,
       reservationTime,
+      extraDetails,
       privacyAgreed
     } = req.body;
 
@@ -55,6 +56,7 @@ router.post('/', async (req: Request, res: Response) => {
       reservationDate,
       reservationTime,
       privacyAgreed,
+      extraDetails,
       status: 'PENDING' // 초기 상태: 대기중
     }, { transaction });
 

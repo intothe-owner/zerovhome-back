@@ -13,7 +13,7 @@ export class Reservation extends Model<
 > {
   declare id: CreationOptional<number>;
   declare category1Id: number;
-  declare category2Id: number;
+  declare category2Id: number | null;
   
   declare unitCount: number;
   declare totalPrice: number;
@@ -31,6 +31,7 @@ export class Reservation extends Model<
   declare workerId: number | null; 
   
   declare privacyAgreed: boolean;
+  declare extraDetails: any | null;
   
   // 💡 문제가 되었던 createdAt, updatedAt 선언부 삭제 완료
 }
@@ -38,7 +39,7 @@ export class Reservation extends Model<
 Reservation.init({
   id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
   category1Id: { type: DataTypes.INTEGER, allowNull: false, comment: '1차 카테고리' },
-  category2Id: { type: DataTypes.INTEGER, allowNull: false, comment: '2차 카테고리' },
+  category2Id: { type: DataTypes.INTEGER, allowNull: true, comment: '2차 카테고리' },
   
   unitCount: { type: DataTypes.INTEGER, allowNull: false, comment: '입력한 수치 (평수/대수 등)' },
   totalPrice: { type: DataTypes.INTEGER, allowNull: false, comment: '자동 계산된 최종 견적가' },
@@ -57,7 +58,12 @@ Reservation.init({
     comment: '예약 상태' 
   },
   workerId: { type: DataTypes.INTEGER, allowNull: true, comment: '배정된 직원(Member) ID' },
-  
+  // 💡 JSON 컬럼 추가
+  extraDetails: { 
+    type: DataTypes.JSON, 
+    allowNull: true, 
+    comment: '카테고리별 추가 입력 정보 (브랜드, 연식, 시공환경 등)' 
+  },
   privacyAgreed: { type: DataTypes.BOOLEAN, allowNull: false, comment: '개인정보취급방침 동의 여부' }
 }, {
   sequelize,

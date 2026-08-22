@@ -14,5 +14,5 @@ ServiceCategory.init({
   sequelize,
   tableName: 'service_categories',
   paranoid: true, // 논리 삭제 활성화
-  comment: '1차/2차 서비스 카테고리'
-});
+  comment: '1차/2차 서비스 카테고리' 
+}); 
