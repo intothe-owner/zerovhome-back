@@ -163,7 +163,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.put('/:id/assign', async (req: Request, res: Response) => {
   try {
     const reservationId = Number(req.params.id);
-    const { workerId, status } = req.body;
+    const { workerId, status , reservationDate, reservationTime, totalPrice} = req.body;
 
     const reservation = await Reservation.findByPk(reservationId);
     if (!reservation) {
@@ -173,7 +173,10 @@ router.put('/:id/assign', async (req: Request, res: Response) => {
     // 직원 배정 및 상태 업데이트 (예: PENDING -> ASSIGNED)
     await reservation.update({
       workerId: workerId || reservation.workerId,
-      status: status || 'ASSIGNED'
+      status: status || 'ASSIGNED',
+      reservationDate,   // 💡 추가됨
+      reservationTime,   // 💡 추가됨
+      totalPrice
     });
 
     res.status(200).json({ success: true, message: '직원 배정이 완료되었습니다.', data: reservation });

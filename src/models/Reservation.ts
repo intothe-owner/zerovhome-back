@@ -50,7 +50,7 @@ Reservation.init({
   detailAddress: { type: DataTypes.STRING, allowNull: true, comment: '상세 주소' },
   
   reservationDate: { type: DataTypes.DATEONLY, allowNull: false, comment: '예약 날짜' },
-  reservationTime: { type: DataTypes.TIME, allowNull: false, comment: '예약 시간' },
+  reservationTime: { type: DataTypes.STRING, allowNull: false, comment: '예약 시간' },
   
   status: { 
     type: DataTypes.ENUM('PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'), 
@@ -76,5 +76,7 @@ Reservation.init({
       fields: ['reservationDate', 'reservationTime']
     }
   ],
+  charset: 'utf8mb4',
+  collate: 'utf8mb4_unicode_ci',
   comment: '예약 및 견적 신청 내역'
 });
