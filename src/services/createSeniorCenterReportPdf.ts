@@ -1,6 +1,6 @@
 import PDFDocument from "pdfkit";
 import axios from "axios";
-
+import path from "path";
 type SeniorCenterPdfParams = {
   title: string;
   centerName: string;
@@ -41,8 +41,8 @@ export async function createSeniorCenterReportPdfBuffer(params: SeniorCenterPdfP
     doc.on("data", (chunk) => chunks.push(chunk));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
 
-    const fontBold = "assets/fonts/NotoSansKR-Bold.ttf";
-    const fontMedium = "assets/fonts/NotoSansKR-Regular.ttf";
+    const fontBold = path.join(process.cwd(), "assets", "fonts", "NotoSansKR-Bold.ttf");
+    const fontMedium = path.join(process.cwd(), "assets", "fonts", "NotoSansKR-Regular.ttf");
 
     // --- 1. 제목 영역 ---
     doc.font(fontMedium).fontSize(20).text(`${params.title} (${params.centerName})`, 0, 40, { align: "center" });
