@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import axios from "axios";
 import path from "path";
+import fs from "fs";
 type SeniorCenterPdfParams = {
   title: string;
   centerName: string;
@@ -41,8 +42,17 @@ export async function createSeniorCenterReportPdfBuffer(params: SeniorCenterPdfP
     doc.on("data", (chunk) => chunks.push(chunk));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
 
-    const fontBold = path.join(process.cwd(), "assets", "fonts", "NotoSansKR-Bold.ttf");
-    const fontMedium = path.join(process.cwd(), "assets", "fonts", "NotoSansKR-Regular.ttf");
+    // 여기서 '../../' 를 통해 /app 최상단으로 간 뒤 assets/fonts를 찾습니다.
+    const fontBold = path.join(__dirname, "../../assets/fonts/NotoSansKR-Bold.ttf");
+    const fontMedium = path.join(__dirname, "../../assets/fonts/NotoSansKR-Regular.ttf");
+
+    // 💡 디버깅 방어 코드 (어디서 터지는지 터미널 로그로 정확히 알려줍니다)
+    if (!fs.existsSync(fontMedium)) {
+      console.error(`[에러] 레귤러 폰트가 다음 경로에 없습니다!: ${fontMedium}`);
+    }
+    if (!fs.existsSync(fontBold)) {
+      console.error(`[에러] 볼드 폰트가 다음 경로에 없습니다!: ${fontBold}`);
+    }
 
     // --- 1. 제목 영역 ---
     doc.font(fontMedium).fontSize(20).text(`${params.title} (${params.centerName})`, 0, 40, { align: "center" });
