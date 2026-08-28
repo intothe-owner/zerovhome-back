@@ -10,7 +10,7 @@ import { Member } from './Member';
 import { VisitorLog } from './VisitorLog';
 import { Policy } from './Policy';
 import { MemberDevice } from './MemberDevice';
-
+import { Certification } from './Certification';
 // --- 새로 추가된 모델 임포트 (클린업 & 설문조사) ---
 import { CleanUpHousehold } from './CleanUpHousehold';
 import { SeniorCenterCleanUp } from './SeniorCenterCleanUp';
@@ -113,5 +113,6 @@ export {
   ServiceCategory,
   ServicePrice,
   Reservation,
-  WorkReport 
+  WorkReport,
+  Certification 
 };

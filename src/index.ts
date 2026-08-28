@@ -26,6 +26,7 @@ import { initScheduler } from './cron/scheduler';
 import categoryRouters from "./routes/categoryRoutes";
 import servicePriceRoutes from "./routes/servicePriceRoutes"; 
 import reservationRoutes from "./routes/reservationRoutes";
+import certificationRoutes from './routes/certificationRoutes';
 import path from 'path';
 import './config/firebase';
 dotenv.config();
@@ -82,7 +83,7 @@ app.use("/api/senior-centers", seniorReports);
 app.use("/api/category", categoryRouters);
 app.use("/api/prices", servicePriceRoutes);
 app.use("/api/reservations",reservationRoutes);
-
+app.use('/api/certifications',certificationRoutes);
 // DB 동기화 및 서버 실행
 const syncOptions = process.env.NODE_ENV === 'production' ? {} : { alter: true };
 
