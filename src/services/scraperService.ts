@@ -317,7 +317,7 @@ export const scrapeBusanjh = async () => {
   console.log('--- 🔍 [부산자활] 크롤링 시작 ---');
   const results: any[] = [];
   const baseUrl = 'https://www.busanjh.or.kr';
-  const targetUrl = 'https://www.busanjh.or.kr/bbs/board.php?bo_table=notice2&sca=%EA%B3%B5%EC%A7%80';
+  const targetUrl = 'https://www.busanjh.or.kr/bbs/board.php?bo_table=notice2&sca=공지';
 
   const response = await axios.get(targetUrl, {
     httpsAgent: new https.Agent({ rejectUnauthorized: false }),
