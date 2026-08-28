@@ -324,6 +324,7 @@ export const scrapeBusanjh = async () => {
     httpsAgent: new https.Agent({ rejectUnauthorized: false }),
     headers: { 'User-Agent': 'Mozilla/5.0' }
   });
+  console.log(response.data);
   
   const $ = cheerio.load(response.data);
   $('.bbs-list > ul > li').each((_, element) => {
