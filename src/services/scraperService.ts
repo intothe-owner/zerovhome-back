@@ -316,42 +316,60 @@ export const scrapeKdissw = async () => {
 export const scrapeBusanjh = async () => {
   console.log('--- 🔍 [부산자활] 크롤링 시작 ---');
   const results: any[] = [];
-  const sca = encodeURIComponent('공지');
   const baseUrl = 'https://www.busanjh.or.kr';
+  
+  const sca = encodeURIComponent('공지');
   const targetUrl = `https://www.busanjh.or.kr/bbs/board.php?bo_table=notice2&sca=${sca}`;
 
-  const response = await axios.get(targetUrl, {
-    httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-    headers: { 'User-Agent': 'Mozilla/5.0' }
-  });
-  console.log(response.data);
-  
-  const $ = cheerio.load(response.data);
-  $('.bbs-list > ul > li').each((_, element) => {
-    const aTag = $(element).find('a.aline');
-    if (!aTag.length) return;
+  let browser;
+  try {
+    // 1. 눈에 보이지 않는 브라우저(Headless) 실행
+    browser = await puppeteer.launch({ 
+      headless: true, // 또는 true
+      args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+    });
+    const page = await browser.newPage();
 
-    let rawTitle = aTag.attr('title') || aTag.text();
-    let title = rawTitle.replace(/\s+/g, ' ').trim();
-    if (!title) return;
+    // 2. 봇 차단을 피하기 위해 실제 브라우저인 척 User-Agent 세팅
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-    const category = '부산자활';
-    const author = $(element).find('.pname').text().trim();
-    const department = author || '부산광역자활센터';
+    // 3. 페이지 이동 (네트워크 요청이 거의 다 끝날 때까지 대기 - JS 리다이렉트 처리됨)
+    console.log('페이지 로딩 및 보안 챌린지 우회 중...');
+    await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 15000 });
 
-    let detailUrl = '';
-    const hrefAttr = aTag.attr('href') || '';
-    if (hrefAttr) detailUrl = hrefAttr.startsWith('http') ? hrefAttr : baseUrl + '/bbs/' + hrefAttr.replace(/^\.\//, '');
+    // 4. 보안 챌린지가 풀린 후의 최종 HTML 문서 가져오기
+    const html = await page.content();
+    
+    // 브라우저 닫기
+    await browser.close();
 
-    let period = $(element).find('span.date').text().trim();
-    const dateMatch = period.match(/\d{4}[\.\-]\d{2}[\.\-]\d{2}/);
-    if (dateMatch) period = dateMatch[0];
+    // 5. 작성해두신 완벽한 Cheerio 로직 그대로 사용!
+    const $ = cheerio.load(html);
+    $('.bbs-list > ul > li').each((_, element) => {
+      const aTag = $(element).find('a.aline');
+      if (!aTag.length) return;
 
-    results.push({ category, title, period, department, detailUrl });
-  });
+      let rawTitle = aTag.attr('title') || aTag.text();
+      let title = rawTitle.replace(/\s+/g, ' ').trim();
+      if (!title) return;
 
-  let updateCount = 0;
-  const newlyAddedFunds: any[] = [];
+      const category = '부산자활';
+      const author = $(element).find('.pname').text().trim();
+      const department = author || '부산광역자활센터';
+
+      let detailUrl = '';
+      const hrefAttr = aTag.attr('href') || '';
+      if (hrefAttr) detailUrl = hrefAttr.startsWith('http') ? hrefAttr : baseUrl + '/bbs/' + hrefAttr.replace(/^\.\//, '');
+
+      let period = $(element).find('span.date').text().trim();
+      const dateMatch = period.match(/\d{4}[\.\-]\d{2}[\.\-]\d{2}/);
+      if (dateMatch) period = dateMatch[0];
+
+      results.push({ category, title, period, department, detailUrl });
+    });
+
+    let updateCount = 0;
+    const newlyAddedFunds: any[] = [];
 
   for (const item of results.filter(item => item?.title)) {
     const existingFund = await SupportFund.findOne({ where: { title: item.title } });
@@ -369,4 +387,9 @@ export const scrapeBusanjh = async () => {
 
   console.log(`[부산자활] 완료! (신규: ${newlyAddedFunds.length}, 갱신: ${updateCount})`);
   return { newCount: newlyAddedFunds.length, updateCount };
-};
+  } catch (error) {
+    if (browser) await browser.close();
+    console.error('[부산자활] 크롤링 중 에러 발생:', error);
+    throw error;
+  }
+}
