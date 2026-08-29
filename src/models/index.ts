@@ -23,6 +23,14 @@ import { ServicePrice } from './ServicePrice';
 import { Reservation } from './Reservation';
 import { WorkReport } from './WorkReport';
 
+//통합 작업
+import { WorkSite } from './WorkSite';
+import { WorkItem } from './WorkItem';
+import { SiteSurvey } from './SiteSurvey';
+import { SiteSurveyResponse } from './SiteSurveyResponse';
+import { SiteReportForm } from './SiteReportForm';
+import { SiteReportResult } from './SiteReportResult';
+
 // --- 테이블 간의 관계(Relation) 정의 ---
 
 // 1. 메뉴-메뉴 (자기참조)
@@ -93,6 +101,39 @@ Reservation.belongsTo(Member, { foreignKey: 'workerId', as: 'worker' });
 Reservation.hasOne(WorkReport, { foreignKey: 'reservationId', onDelete: 'CASCADE' });
 WorkReport.belongsTo(Reservation, { foreignKey: 'reservationId' });
 
+// 1. 작업현장(1) - 작업목록(N)
+WorkSite.hasMany(WorkItem, { foreignKey: 'workSiteId', as: 'items', onDelete: 'CASCADE' });
+WorkItem.belongsTo(WorkSite, { foreignKey: 'workSiteId', as: 'site' });
+
+// 2. 회원(1) - 작업목록(N) : 작업자 배정[cite: 7]
+Member.hasMany(WorkItem, { foreignKey: 'assignedMemberId', as: 'assignedWorks' }); // 💡 별칭을 변경
+WorkItem.belongsTo(Member, { foreignKey: 'assignedMemberId', as: 'worker' });
+
+// 1. 작업현장(1) - 현장설문폼(1)
+WorkSite.hasOne(SiteSurvey, { foreignKey: 'workSiteId', as: 'surveyForm', onDelete: 'CASCADE' });
+SiteSurvey.belongsTo(WorkSite, { foreignKey: 'workSiteId', as: 'workSite' });
+
+// 2. 개별작업목록(1) - 설문응답(1)
+WorkItem.hasOne(SiteSurveyResponse, { foreignKey: 'workItemId', as: 'surveyResponse', onDelete: 'CASCADE' });
+SiteSurveyResponse.belongsTo(WorkItem, { foreignKey: 'workItemId', as: 'workItem' });
+
+// 3. 현장설문폼(1) - 설문응답(N)
+SiteSurvey.hasMany(SiteSurveyResponse, { foreignKey: 'siteSurveyId', as: 'responses', onDelete: 'CASCADE' });
+SiteSurveyResponse.belongsTo(SiteSurvey, { foreignKey: 'siteSurveyId', as: 'surveyForm' });
+
+
+// 1. 작업현장(1) - 보고서양식(1)
+WorkSite.hasOne(SiteReportForm, { foreignKey: 'workSiteId', as: 'reportForm', onDelete: 'CASCADE' });
+SiteReportForm.belongsTo(WorkSite, { foreignKey: 'workSiteId', as: 'workSite' });
+
+// 2. 개별작업(1) - 보고서결과(1)
+WorkItem.hasOne(SiteReportResult, { foreignKey: 'workItemId', as: 'reportResult', onDelete: 'CASCADE' });
+SiteReportResult.belongsTo(WorkItem, { foreignKey: 'workItemId', as: 'workItem' });
+
+// 3. 담당자(1) - 보고서결과(N)
+Member.hasMany(SiteReportResult, { foreignKey: 'workerId', as: 'submittedReports' });
+SiteReportResult.belongsTo(Member, { foreignKey: 'workerId', as: 'worker' });
+
 export { 
   Menu, 
   Page, 
@@ -105,7 +146,6 @@ export {
   MemberDevice,
   VisitorLog,
   Policy,
-  // 추가된 익스포트
   CleanUpHousehold, 
   SeniorCenterCleanUp, 
   Survey, 
@@ -114,5 +154,12 @@ export {
   ServicePrice,
   Reservation,
   WorkReport,
-  Certification 
+  Certification,
+  // 새로 추가된 통합 작업 모델 익스포트
+  WorkSite,
+  WorkItem,
+  SiteSurvey,
+  SiteSurveyResponse,
+  SiteReportForm,
+  SiteReportResult
 };

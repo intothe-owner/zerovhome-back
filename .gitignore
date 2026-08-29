@@ -7,3 +7,4 @@ out/
 public
 dists
 src/config/serviceAccountKey.json
+src/@models
