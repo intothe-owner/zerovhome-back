@@ -49,7 +49,7 @@ router.get("/", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
-    const { title, description, hasSurvey, listVisibleFields, detailVisibleFields } = req.body;
+    const { title, description, hasSurvey, listVisibleFields, detailVisibleFields,mobileListVisibleFields } = req.body;
 
     if (!title) {
       await tx.rollback();
@@ -62,6 +62,7 @@ router.post("/", async (req: Request, res: Response) => {
       hasSurvey: hasSurvey === true || hasSurvey === "true",
       listVisibleFields: listVisibleFields || [],     // [요구사항 6] 노출 항목 (프론트에서 배열로 전달)
       detailVisibleFields: detailVisibleFields || [], // [요구사항 6] 노출 항목
+      mobileListVisibleFields: mobileListVisibleFields || []
     }, { transaction: tx });
 
     await tx.commit();

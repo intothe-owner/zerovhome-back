@@ -42,8 +42,10 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
   
   const surveyResponse = workItem.surveyResponse;
   const surveyForm = surveyResponse?.surveyForm;
-  const hasSurvey = !!(surveyResponse && surveyForm);
+  const hasSurvey = !!(surveyForm);
+  
   const workDateStr = workItem.workDate || new Date().toISOString().split('T')[0];
+  const [signYear, signMonth, signDay] = workDateStr.split('-');
 
   const reportForm = await SiteReportForm.findOne({ where: { workSiteId: workItem.workSiteId } });
   let categories = reportForm?.categories || ["기본"];
@@ -81,33 +83,99 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
 
   const pdfUrls: Record<string, string> = {};
 
-  // 2. 카테고리별로 루프를 돌며 각각 별도의 PDF 생성
+  // 2. 카테고리별 PDF 생성
   for (const cat of categories) {
     let categoryImagesHtml = `<div class="photo-grid">`;
     
     imageFields.forEach((imgF: any) => {
       if (imgF.layout === 'FULL') {
         const key = `${cat}_${imgF.name}`;
-        if (imageAnswers[key]) {
-          categoryImagesHtml += `
-            <div class="photo-card-full">
-              <div class="photo-title">${imgF.name}</div>
-              <img src="${imageAnswers[key]}" alt="${key}" />
+        const imgUrl = imageAnswers[key];
+        categoryImagesHtml += `
+          <div class="photo-card-full">
+            <div class="photo-title">${imgF.name}</div>
+            <div class="photo-content">
+              ${imgUrl ? `<img src="${imgUrl}" alt="${key}" />` : `<span class="empty-text">이미지 없음</span>`}
             </div>
-          `;
-        }
+          </div>
+        `;
       } else {
         const key1 = `${cat}_${imgF.name} 1`, key2 = `${cat}_${imgF.name} 2`;
         const url1 = imageAnswers[key1], url2 = imageAnswers[key2];
-        if (url1 || url2) {
-          categoryImagesHtml += `<div class="photo-row">`;
-          categoryImagesHtml += url1 ? `<div class="photo-card-half"><div class="photo-title">${imgF.name} 1</div><img src="${url1}"/></div>` : `<div class="photo-card-half empty"></div>`;
-          categoryImagesHtml += url2 ? `<div class="photo-card-half"><div class="photo-title">${imgF.name} 2</div><img src="${url2}"/></div>` : `<div class="photo-card-half empty"></div>`;
-          categoryImagesHtml += `</div>`;
-        }
+        categoryImagesHtml += `<div class="photo-row">`;
+        categoryImagesHtml += `
+          <div class="photo-card-half">
+            <div class="photo-title">${imgF.name} 1</div>
+            <div class="photo-content">
+              ${url1 ? `<img src="${url1}"/>` : `<span class="empty-text">이미지 없음</span>`}
+            </div>
+          </div>`;
+        categoryImagesHtml += `
+          <div class="photo-card-half">
+            <div class="photo-title">${imgF.name} 2</div>
+            <div class="photo-content">
+              ${url2 ? `<img src="${url2}"/>` : `<span class="empty-text">이미지 없음</span>`}
+            </div>
+          </div>`;
+        categoryImagesHtml += `</div>`;
       }
     });
     categoryImagesHtml += `</div>`;
+
+    const signatureHtml = `
+      <div class="signature-section">
+        <div class="sig-date">${signYear} 년 &nbsp;&nbsp;&nbsp;&nbsp; ${signMonth} 월 &nbsp;&nbsp;&nbsp;&nbsp; ${signDay} 일</div>
+        <div class="sig-name">
+          성명: ${workItem.customerName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}
+          <span class="sig-mark">
+            (서명) ${workItem.customerSignature ? `<img src="${workItem.customerSignature}" />` : ''}
+          </span>
+        </div>
+      </div>
+    `;
+
+    // 설문조사 문항 HTML 빌드
+    let surveyQuestionsHtml = '';
+    if (hasSurvey && surveyForm.questions) {
+      if (!surveyResponse || !surveyResponse.answers || Object.keys(surveyResponse.answers).length === 0) {
+        surveyQuestionsHtml = `
+          <div class="no-data-text">설문 응답 데이터가 없습니다.</div>
+          <div class="survey-subtitle">본 서비스에 대한 의견을 확인합니다.</div>
+        `;
+      } else {
+        surveyQuestionsHtml = `<div class="survey-subtitle">본 서비스에 대한 의견을 확인합니다.</div>`;
+        surveyQuestionsHtml += surveyForm.questions.map((q: any, i: number) => {
+          const answer = surveyResponse.answers[i] || surveyResponse.answers[i.toString()];
+          
+          if (q.type === 'MULTIPLE_CHOICE' || q.options) {
+            let optionsHtml = '<div class="survey-options">';
+            q.options.forEach((opt: string) => {
+              const isChecked = answer === opt ? 'checked' : '';
+              optionsHtml += `
+                <label class="survey-option">
+                  <input type="radio" ${isChecked}> <span>${opt}</span>
+                </label>
+              `;
+            });
+            optionsHtml += '</div>';
+            
+            return `
+              <div class="qa-box">
+                <div class="q-title">${i + 1}. ${q.question}</div>
+                ${optionsHtml}
+              </div>
+            `;
+          } else {
+            return `
+              <div class="qa-box">
+                <div class="q-title">${i + 1}. ${q.question}</div>
+                <div class="a-text">${answer || '응답 없음'}</div>
+              </div>
+            `;
+          }
+        }).join('');
+      }
+    }
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -123,6 +191,8 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
             box-sizing: border-box; 
             height: 277mm; 
             display: flex; flex-direction: column; justify-content: space-between;
+            -webkit-print-color-adjust: exact; 
+            print-color-adjust: exact;
           }
           
           .page-1 { height: 100%; display: flex; flex-direction: column; justify-content: space-between; }
@@ -131,80 +201,74 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
           .header h1 { margin: 0; font-size: 20px; }
           .header p { margin: 3px 0 0; color: #555; font-size: 12px; }
           
-          table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-          th, td { border: 1px solid #ccc; padding: 5px 8px; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+          th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 12px; }
           th { background-color: #f4f4f4; width: 20%; text-align: center; }
           td { width: 30%; }
 
-          .photo-grid { display: flex; flex-direction: column; gap: 6px; flex: 1; justify-content: center; margin-bottom: 8px; }
+          .photo-grid { display: flex; flex-direction: column; gap: 8px; flex: 1; justify-content: flex-start; margin-bottom: 8px; }
           
-          .photo-card-full { width: 100%; border: 1px solid #ddd; padding: 4px; box-sizing: border-box; text-align: center; }
-          .photo-card-full .photo-title { margin: 0 0 3px 0; font-size: 11px; background: #eee; padding: 3px; font-weight: bold; }
-          .photo-card-full img { width: 100%; max-height: 120px; object-fit: contain; }
-
+          .photo-card-full, .photo-card-half { 
+            border: 1px solid #ccc; padding: 4px; box-sizing: border-box; text-align: center; background: #fff;
+          }
+          .photo-card-full { width: 100%; }
           .photo-row { display: flex; justify-content: space-between; gap: 8px; }
-          .photo-card-half { width: 48%; border: 1px solid #ddd; padding: 4px; box-sizing: border-box; text-align: center; }
-          .photo-card-half .photo-title { margin: 0 0 3px 0; font-size: 11px; background: #eee; padding: 3px; font-weight: bold; }
-          .photo-card-half img { width: 100%; height: 110px; object-fit: contain; }
-          .photo-card-half.empty { border: none; }
+          .photo-card-half { width: 48%; }
+          
+          .photo-title { margin: 0 0 4px 0; font-size: 12px; background: #f4f4f4; padding: 4px; font-weight: bold; border-bottom: 1px solid #ccc; }
+          .photo-content { height: 160px; display: flex; align-items: center; justify-content: center; background: #fafafa; }
+          .photo-content img { width: 100%; max-height: 100%; object-fit: contain; }
+          .empty-text { color: #888; font-size: 14px; font-weight: bold; }
 
-          .signature-box { text-align: right; padding-top: 6px; border-top: 1px dashed #ccc; font-size: 13px; }
-          .signature-box p { margin: 2px 0; }
+          .signature-section { margin-top: auto; padding-top: 20px; text-align: right; font-size: 15px; border-top: 2px solid #222; }
+          .sig-date { margin-bottom: 12px; font-weight: bold; letter-spacing: 1px; }
+          .sig-name { font-weight: bold; position: relative; display: inline-block; padding-right: 90px; }
+          .sig-mark { position: absolute; right: 0; top: 0; }
+          .sig-mark img { position: absolute; right: -20px; top: -15px; height: 50px; }
 
-          /* 2페이지: 설문조사 전용 스타일 */
           .page-2 { page-break-before: always; height: 100%; display: flex; flex-direction: column; justify-content: space-between; }
-          .survey-content { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 15px; }
+          .survey-content { flex: 1; display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }
+          .survey-subtitle { font-size: 14px; color: #555; margin-bottom: 10px; text-align: left; }
           .qa-box { margin-bottom: 10px; }
-          .q-title { font-weight: bold; font-size: 15px; margin-bottom: 5px; }
-          .a-text { font-size: 14px; color: #4f46e5; padding-left: 12px; border-left: 3px solid #4f46e5; }
+          .q-title { font-weight: bold; font-size: 14px; margin-bottom: 6px; }
+          
+          .survey-options { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; margin-top: 4px; padding-left: 5px; }
+          .survey-option { display: flex; align-items: center; gap: 4px; }
+          .survey-option input[type="radio"] { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; border: 1px solid #777; border-radius: 50%; margin: 0; display: inline-block; position: relative; }
+          .survey-option input[type="radio"]:checked { border-color: #333; }
+          .survey-option input[type="radio"]:checked::after { content: ''; width: 8px; height: 8px; background: #333; border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+          .a-text { font-size: 13px; color: #333; padding: 4px 8px; border-left: 2px solid #555; background: #f9f9f9; }
+          .no-data-text { font-size: 14px; color: #888; font-weight: bold; margin-bottom: 20px; }
         </style>
       </head>
       <body>
-        <!-- 1페이지: 작업 보고서 -->
         <div class="page-1">
           <div>
             <div class="header">
-              <h1>${site.title} - ${cat} 작업 완료 보고서</h1>
-              <p>작업일자: ${workDateStr}</p>
+              <h1>${site.title} - ${cat} 작업 보고서</h1>
             </div>
             <table>
-              <tr><th>고객명 / 장소</th><td>${workItem.customerName}</td><th>담당 작업자</th><td>${workItem.workerName || '미지정'}</td></tr>
+              <tr><th>고객명 / 장소</th><td>${workItem.customerName || '-'}</td><th>담당 작업자</th><td>${workItem.workerName || '미지정'}</td></tr>
               ${textHtml}
             </table>
             ${categoryImagesHtml}
           </div>
 
-          <!-- 설문조사가 없을 때만 1페이지 하단에 서명 노출 -->
-          ${!hasSurvey ? `
-            <div class="signature-box">
-              <p>날짜: ${workDateStr}</p>
-              <p><strong>고객 확인 서명:</strong> ${workItem.customerSignature ? `<img src="${workItem.customerSignature}" style="height:40px; vertical-align:middle;"/>` : '(서명 없음)'}</p>
-            </div>
-          ` : `<div></div>`}
+          ${!hasSurvey ? signatureHtml : `<div></div>`}
         </div>
 
-        <!-- 2페이지: 설문조사 결과가 있을 때만 생성 (서명은 오직 이 2페이지 하단에만 노출) -->
         ${hasSurvey ? `
           <div class="page-2">
             <div>
               <div class="header">
-                <h1>${surveyForm.title || '만족도 조사 결과'}</h1>
-                ${surveyForm.description ? `<p>${surveyForm.description}</p>` : ''}
+                <h1>설문조사</h1>
               </div>
               <div class="survey-content">
-                ${surveyForm.questions.map((q: any, i: number) => `
-                  <div class="qa-box">
-                    <div class="q-title">Q${i + 1}. ${q.question}</div>
-                    <div class="a-text">A. ${surveyResponse.answers[i] || surveyResponse.answers[i.toString()] || '응답 없음'}</div>
-                  </div>
-                `).join('')}
+                ${surveyQuestionsHtml}
               </div>
             </div>
 
-            <div class="signature-box">
-              <p>날짜: ${workDateStr}</p>
-              <p><strong>고객 확인 서명:</strong> ${workItem.customerSignature ? `<img src="${workItem.customerSignature}" style="height:40px; vertical-align:middle;"/>` : '(서명 없음)'}</p>
-            </div>
+            ${signatureHtml}
           </div>
         ` : ''}
       </body>
@@ -216,7 +280,6 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
     const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
     await page.close();
 
-    // 💡 변경점 1: 파일명에서 Date.now() 제거. (항상 동일한 이름의 파일로 덮어쓰기)
     const fileName = `report_pdf_${workItem.id}_${cat}.pdf`;
     
     const uploadCommand = new PutObjectCommand({
@@ -227,7 +290,6 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
     });
     await s3.send(uploadCommand);
     
-    // 💡 변경점 2: URL에 ?t=시간 쿼리를 붙여서 S3에는 덮어쓰지만 브라우저 캐시는 우회하도록 설정
     pdfUrls[cat] = `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/uploads/reports/pdfs/${fileName}?t=${Date.now()}`;
   }
 

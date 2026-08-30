@@ -10,6 +10,7 @@ import puppeteer from "puppeteer";
 
 import { SiteReportResult } from "../models/SiteReportResult";
 import { SiteSurveyResponse } from "../models/SiteSurveyResponse";
+import { checkLevel } from "../middlewares/authMiddleware";
 const router = Router();
 
 // S3 설정
@@ -20,7 +21,7 @@ const s3 = new S3Client({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
 });
-
+ 
 // Base64 서명 검증 유틸리티
 function isBase64SignatureDataUrl(data: string): boolean {
   return data.startsWith("data:image/");
@@ -32,21 +33,36 @@ function isBase64SignatureDataUrl(data: string): boolean {
 /**
  * 1. 작업 목록 조회 (통합 키워드 검색 및 페이징 적용)
  */
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", checkLevel, async (req: Request, res: Response) => {
   try {
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 20;
     const keyword = (req.query.keyword as string)?.trim() || "";
     
     const workSiteId = req.query.workSiteId;
-    const assignedMemberId = req.query.assignedMemberId;
     const status = req.query.status;
 
     const where: any = {};
 
     if (workSiteId) where.workSiteId = Number(workSiteId);
-    if (assignedMemberId) where.assignedMemberId = Number(assignedMemberId);
-    if (status) where.status = status;
+    //if (status) where.status = status;
+    if (status) {
+      if (typeof status === 'string' && status.includes(',')) {
+        // "PENDING,CANCELED" 처럼 콤마가 있으면 쪼개서 두 개 다 검색되도록 처리
+        where.status = { [Op.in]: status.split(',') }; 
+      } else {
+        where.status = status;
+      }
+    }
+    // 💡 JWT 권한 기반 필터링: 관리자(level 10)가 아니면 무조건 본인 작업만 조회
+    const user = req.user;
+    if (user && user.level !== 10) {
+      if (user.id) {
+        where.assignedMemberId = Number(user.id);
+      }
+    } else if (req.query.assignedMemberId) {
+      where.assignedMemberId = Number(req.query.assignedMemberId);
+    }
 
     if (keyword) {
       where[Op.or] = [
@@ -64,7 +80,7 @@ router.get("/", async (req: Request, res: Response) => {
       include: [
         { 
           model: sequelize.models.Member || sequelize.models.User, 
-          as: "worker", // 💡 여기를 assignedMember에서 worker로 수정!
+          as: "worker", // 💡 Association Alias 오류 해결 부분
           required: false,
           attributes: ["id", "name", "nickname", "companyName"] 
         }
@@ -76,11 +92,9 @@ router.get("/", async (req: Request, res: Response) => {
 
     const formattedRows = rows.map((item: any) => {
       const plain = item.toJSON();
-      
-      // 💡 데이터를 빼낼 때도 worker에서 빼내도록 수정
       if (plain.worker) {
         const m = plain.worker;
-        plain.workerName = plain.workerName || (m.companyName ? `${m.name} (${m.companyName})` : m.nickname || m.name);
+        plain.workerName = plain.workerName || m.companyName ? `${m.name} (${m.companyName})` : m.nickname || m.name;
       }
       return plain;
     });
