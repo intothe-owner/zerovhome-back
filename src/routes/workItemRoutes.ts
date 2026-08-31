@@ -30,86 +30,61 @@ function isBase64SignatureDataUrl(data: string): boolean {
 /**
  * 1. 작업 목록 조회 (통합 키워드 검색 및 페이징 적용)
  */
-/**
- * 1. 작업 목록 조회 (통합 키워드 검색 및 페이징 적용)
- */
-router.get("/", checkLevel, async (req: Request, res: Response) => {
+router.get("/", async (req: Request, res: Response) => {
   try {
     const page = Number(req.query.page) || 1;
-    const pageSize = Number(req.query.pageSize) || 20;
-    const keyword = (req.query.keyword as string)?.trim() || "";
-    
-    const workSiteId = req.query.workSiteId;
-    const status = req.query.status;
+    const pageSize = Number(req.query.pageSize) || 20; // Pagination 적용
+    const { workSiteId, status, keyword, workerName, assignedMemberId } = req.query;
 
-    const where: any = {};
+    const where: WhereOptions = {};
 
-    if (workSiteId) where.workSiteId = Number(workSiteId);
-    //if (status) where.status = status;
+    if (workSiteId) {
+      where.workSiteId = Number(workSiteId);
+    }
+
     if (status) {
       if (typeof status === 'string' && status.includes(',')) {
-        // "PENDING,CANCELED" 처럼 콤마가 있으면 쪼개서 두 개 다 검색되도록 처리
         where.status = { [Op.in]: status.split(',') }; 
       } else {
         where.status = status;
       }
     }
-    // 💡 JWT 권한 기반 필터링: 관리자(level 10)가 아니면 무조건 본인 작업만 조회
-    const user = req.user;
-    if (user && user.level !== 10) {
-      if (user.id) {
-        where.assignedMemberId = Number(user.id);
-      }
-    } else if (req.query.assignedMemberId) {
-      where.assignedMemberId = Number(req.query.assignedMemberId);
+
+    // 💡 작업자 아이디 기반 검색
+    if (assignedMemberId) {
+      where.assignedMemberId = Number(assignedMemberId);
+    }
+
+    // 💡 미배정 검색 ('workerName=미배정' 으로 요청이 들어왔을 때)
+    if (workerName === '미배정') {
+      where.assignedMemberId = null; // null이거나 빈 값인 항목 조회
     }
 
     if (keyword) {
-      where[Op.or] = [
-        { customerName: { [Op.like]: `%${keyword}%` } },
-        sequelize.where(sequelize.cast(sequelize.col('WorkItem.row_data'), 'CHAR'), {
-          [Op.like]: `%${keyword}%`
-        })
-      ];
+      where.customerName = { [Op.like]: `%${keyword}%` };
     }
 
     const offset = (page - 1) * pageSize;
-    
     const { count, rows } = await WorkItem.findAndCountAll({
       where,
-      include: [
-        { 
-          model: sequelize.models.Member || sequelize.models.User, 
-          as: "worker", // 💡 Association Alias 오류 해결 부분
-          required: false,
-          attributes: ["id", "name", "nickname", "companyName"] 
-        }
+      order: [
+        ["routeOrder", "ASC"], 
+        ["createdAt", "DESC"]
       ],
       offset,
       limit: pageSize,
-      order: [["routeOrder", "ASC"], ["id", "DESC"]]
-    });
-
-    const formattedRows = rows.map((item: any) => {
-      const plain = item.toJSON();
-      if (plain.worker) {
-        const m = plain.worker;
-        plain.workerName = plain.workerName || m.companyName ? `${m.name} (${m.companyName})` : m.nickname || m.name;
-      }
-      return plain;
     });
 
     return res.status(200).json({ 
       ok: true, 
-      data: formattedRows,
-      total: count,
-      page,
-      pageSize,
-      totalPages: Math.ceil(count / pageSize)
+      data: rows, 
+      total: count, 
+      page, 
+      totalPages: Math.ceil(count / pageSize) 
     });
   } catch (error) {
     console.error("작업 목록 조회 에러:", error);
-    return res.status(500).json({ ok: false, message: "서버 오류" });
+    return res.status(500).json({ ok: false, message: "서버 오류가 발생했습니다." });
   }
 });
 
