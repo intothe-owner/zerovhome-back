@@ -216,8 +216,8 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
           .photo-card-half { width: 48%; }
           
           .photo-title { margin: 0 0 4px 0; font-size: 12px; background: #f4f4f4; padding: 4px; font-weight: bold; border-bottom: 1px solid #ccc; }
-          .photo-content { height: 160px; display: flex; align-items: center; justify-content: center; background: #fafafa; }
-          .photo-content img { width: 100%; max-height: 100%; object-fit: contain; }
+          .photo-content { height: 160px; display: flex; align-items: center; justify-content: center; background: #fafafa; overflow: hidden; }
+.photo-content img { width: 100%; height: 100%; object-fit: cover; }
           .empty-text { color: #888; font-size: 14px; font-weight: bold; }
 
           .signature-section { margin-top: auto; padding-top: 20px; text-align: right; font-size: 15px; border-top: 2px solid #222; }
