@@ -180,22 +180,22 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
 
     // --- 5. 💡 설문 응답(SiteSurveyResponse) 저장 영역 ---
     // (올려주신 코드에 이 부분이 없어서 저장이 안 되었던 것입니다.)
-    if (surveyAnswers) {
-      const targetSurveyId = surveyId || 1; // 설문 폼 ID 매핑
+    const hasSurveyData = surveyAnswers && Object.keys(surveyAnswers).length > 0;
 
+    if (surveyId && hasSurveyData) {
       let existingSurvey = await SiteSurveyResponse.findOne({ where: { workItemId }, transaction: tx });
       
       if (existingSurvey) {
         // 이미 있으면 업데이트
         await existingSurvey.update({ 
           answers: surveyAnswers,
-          siteSurveyId: targetSurveyId 
+          siteSurveyId: surveyId 
         }, { transaction: tx });
       } else {
         // 없으면 새로 생성
         await SiteSurveyResponse.create({ 
           workItemId, 
-          siteSurveyId: targetSurveyId, 
+          siteSurveyId: surveyId, 
           answers: surveyAnswers 
         }, { transaction: tx });
       }
