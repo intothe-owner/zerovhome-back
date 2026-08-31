@@ -33,7 +33,7 @@ function isBase64SignatureDataUrl(data: string): boolean {
 router.get("/", async (req: Request, res: Response) => {
   try {
     const page = Number(req.query.page) || 1;
-    const pageSize = Number(req.query.pageSize) || 20; // Pagination 적용
+    const pageSize = Number(req.query.pageSize) || 20; 
     const { workSiteId, status, keyword, workerName, assignedMemberId } = req.query;
 
     const where: WhereOptions = {};
@@ -50,14 +50,15 @@ router.get("/", async (req: Request, res: Response) => {
       }
     }
 
-    // 💡 작업자 아이디 기반 검색
+    // 💡 작업자 필터링 로직 수정 (미배정 또는 특정 회원 ID 처리)
     if (assignedMemberId) {
-      where.assignedMemberId = Number(assignedMemberId);
-    }
-
-    // 💡 미배정 검색 ('workerName=미배정' 으로 요청이 들어왔을 때)
-    if (workerName === '미배정') {
-      where.assignedMemberId = null; // null이거나 빈 값인 항목 조회
+      if (assignedMemberId === "UNASSIGNED") {
+        where.assignedMemberId = { [Op.or]: [null, ''] };
+      } else {
+        where.assignedMemberId = Number(assignedMemberId);
+      }
+    } else if (workerName === '미배정') {
+      where.assignedMemberId = { [Op.or]: [null, ''] };
     }
 
     if (keyword) {
