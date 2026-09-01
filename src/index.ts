@@ -31,6 +31,7 @@ import workSiteRoutes from './routes/workSiteRoutes';
 import workItemRoutes from './routes/workItemRoutes';
 import reportRoutes from './routes/reportRoutes';
 import siteSurveyRoutes from './routes/surveyRoutes';
+import cbtRoutes from './routes/cbtRoutes';
 
 // DB 동기화 및 서버 실행
 import path from 'path';
@@ -95,6 +96,7 @@ app.use("/api/work-sites", workSiteRoutes);
 app.use("/api/work-items", workItemRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/site-surveys", siteSurveyRoutes);
+app.use("/api/questions", cbtRoutes);
 // DB 동기화 및 서버 실행
 const syncOptions = process.env.NODE_ENV === 'production' ? {} : { alter: true };
 

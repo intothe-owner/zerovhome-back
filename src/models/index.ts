@@ -30,6 +30,9 @@ import { SiteSurvey } from './SiteSurvey';
 import { SiteSurveyResponse } from './SiteSurveyResponse';
 import { SiteReportForm } from './SiteReportForm';
 import { SiteReportResult } from './SiteReportResult';
+import { ExamSession } from './ExamSession';
+import { UserAnswer } from './UserAnswer';
+import { Question } from './Question';
 
 // --- 테이블 간의 관계(Relation) 정의 ---
 
@@ -134,6 +137,13 @@ SiteReportResult.belongsTo(WorkItem, { foreignKey: 'workItemId', as: 'workItem' 
 Member.hasMany(SiteReportResult, { foreignKey: 'workerId', as: 'submittedReports' });
 SiteReportResult.belongsTo(Member, { foreignKey: 'workerId', as: 'worker' });
 
+// index.ts 또는 associate를 설정하는 곳에서
+ExamSession.hasMany(UserAnswer, { foreignKey: 'sessionId', as: 'answers' });
+UserAnswer.belongsTo(ExamSession, { foreignKey: 'sessionId' });
+
+Question.hasMany(UserAnswer, { foreignKey: 'questionId' });
+UserAnswer.belongsTo(Question, { foreignKey: 'questionId', as: 'questionInfo' });
+
 export { 
   Menu, 
   Page, 
@@ -161,5 +171,8 @@ export {
   SiteSurvey,
   SiteSurveyResponse,
   SiteReportForm,
-  SiteReportResult
+  SiteReportResult,
+  ExamSession,
+  Question,
+  UserAnswer
 };
