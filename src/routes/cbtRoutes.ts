@@ -475,7 +475,7 @@ router.delete("/exams/history/:sessionId", async (req: Request, res: Response) =
   }
 });
 
-router.get("/questions/exams/:sessionId/incorrect", async (req: Request, res: Response) => {
+router.get("/exams/:sessionId/incorrect", async (req: Request, res: Response) => {
   try {
     const sessionId = Number(req.params.sessionId);
 
