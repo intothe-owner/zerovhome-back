@@ -34,7 +34,20 @@ router.get("/", checkLevel, async (req: Request, res: Response) => {
     // 💡 레벨 9 현장관리자는 본인이 등록(또는 배정받은) 현장만 조회
     if (user.level === 9) {
       where.memberId = user.id;
-    }
+    }else if (user.level === 1) {
+        // [레벨 1] 일반회원(현장 기사): 본인에게 배정된 작업(WorkItem)이 존재하는 현장만 조회
+        const assignedItems = await WorkItem.findAll({
+          where: { assignedMemberId: user.id },
+          attributes: ['workSiteId'],
+          raw: true
+        });
+        
+        // 배정받은 작업의 현장 ID들만 추출하여 배열로 만듦
+        const siteIds = assignedItems.map(item => item.workSiteId);
+        
+        // 배정된 현장이 아예 없다면 아무것도 나오지 않도록 [0] 처리
+        where.id = { [Op.in]: siteIds.length > 0 ? siteIds : [0] }; 
+      }
 
     const offset = (page - 1) * pageSize;
     const { count, rows } = await WorkSite.findAndCountAll({
