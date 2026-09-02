@@ -3,6 +3,8 @@ import { sequelize } from "../config/database";
 
 export class WorkSite extends Model<InferAttributes<WorkSite>, InferCreationAttributes<WorkSite>> {
   declare id: CreationOptional<number>;
+
+  declare memberId: number | null;
   declare title: string; // 현장명
   declare description: string | null;
 
@@ -21,6 +23,7 @@ export class WorkSite extends Model<InferAttributes<WorkSite>, InferCreationAttr
 
 WorkSite.init({
   id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+  memberId: { type: DataTypes.INTEGER, allowNull: true, field: "member_id", comment: "현장을 등록한 회원 ID" },
   title: { type: DataTypes.STRING(255), allowNull: false, comment: "작업 현장명" },
   description: { type: DataTypes.TEXT, allowNull: true, comment: "현장 설명" },
 

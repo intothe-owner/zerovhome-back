@@ -6,6 +6,7 @@ import { sequelize } from "../config/database";
 import { WorkSite } from "../models/WorkSite";
 import { WorkItem } from "../models/WorkItem";
 import { getCoordsByAddress } from "../utils/geocoder";
+import { checkLevel } from "../middlewares/authMiddleware";
 
 const router = Router();
 
@@ -16,17 +17,24 @@ const upload = multer({
 });
 
 /**
- * 1. 현장(WorkSite) 목록 조회
+ * 1. 현장(WorkSite) 목록 조회 (💡 권한별 뷰 분기 적용)
  */
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", checkLevel, async (req: Request, res: Response) => {
   try {
+    const user = (req as any).user;
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 20;
     const keyword = (req.query.keyword as string) || "";
 
-    const where: WhereOptions = keyword
-      ? { title: { [Op.like]: `%${keyword}%` } }
-      : {};
+    const where: WhereOptions = {};
+    if (keyword) {
+      where.title = { [Op.like]: `%${keyword}%` };
+    }
+
+    // 💡 레벨 9 현장관리자는 본인이 등록(또는 배정받은) 현장만 조회
+    if (user.level === 9) {
+      where.memberId = user.id;
+    }
 
     const offset = (page - 1) * pageSize;
     const { count, rows } = await WorkSite.findAndCountAll({
@@ -46,10 +54,11 @@ router.get("/", async (req: Request, res: Response) => {
 /**
  * 2. 현장(WorkSite) 등록 (엑셀 업로드 전, 껍데기 생성)
  */
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", checkLevel, async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
-    const { title, description, hasSurvey, listVisibleFields, detailVisibleFields,mobileListVisibleFields } = req.body;
+    const user = (req as any).user;
+    const { title, description, hasSurvey, listVisibleFields, detailVisibleFields, mobileListVisibleFields } = req.body;
 
     if (!title) {
       await tx.rollback();
@@ -57,11 +66,12 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const newSite = await WorkSite.create({
+      memberId: user.level === 9 ? user.id : null, // 💡 레벨 9면 자기 ID, 아니면 null
       title,
       description: description || null,
       hasSurvey: hasSurvey === true || hasSurvey === "true",
-      listVisibleFields: listVisibleFields || [],     // [요구사항 6] 노출 항목 (프론트에서 배열로 전달)
-      detailVisibleFields: detailVisibleFields || [], // [요구사항 6] 노출 항목
+      listVisibleFields: listVisibleFields || [],     
+      detailVisibleFields: detailVisibleFields || [], 
       mobileListVisibleFields: mobileListVisibleFields || []
     }, { transaction: tx });
 
@@ -75,17 +85,38 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 /**
- * 3. 현장(WorkSite) 정보 수정 (노출 항목 변경 등)
+ * 3. 현장(WorkSite) 정보 수정 및 💡 담당자 배정 처리
  */
-router.patch("/:id", async (req: Request, res: Response) => {
+router.patch("/:id", checkLevel, async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
+    const user = (req as any).user;
     const { id } = req.params;
     const site = await WorkSite.findByPk(Number(id));
 
     if (!site) {
       await tx.rollback();
       return res.status(404).json({ ok: false, message: "현장을 찾을 수 없습니다." });
+    }
+
+    // 💡 [핵심 방어 로직] memberId 배정을 시도하는 경우
+    if (req.body.memberId !== undefined) {
+      // 1. 레벨 10 최고관리자만 배정 가능
+      if (user.level !== 10) {
+        await tx.rollback();
+        return res.status(403).json({ ok: false, message: "담당자 배정 권한이 없습니다." });
+      }
+      // 2. 이미 담당자가 있는 경우(null이 아닌 경우) 배정 불가
+      if (site.memberId !== null) {
+        await tx.rollback();
+        return res.status(400).json({ ok: false, message: "이미 담당자가 배정된 현장입니다." });
+      }
+    }
+
+    // 💡 레벨 9 현장관리자는 남의 현장(본인 ID가 아닌 현장) 수정 불가
+    if (user.level === 9 && site.memberId !== user.id) {
+      await tx.rollback();
+      return res.status(403).json({ ok: false, message: "본인의 현장만 수정할 수 있습니다." });
     }
 
     await site.update(req.body, { transaction: tx });
@@ -97,18 +128,25 @@ router.patch("/:id", async (req: Request, res: Response) => {
     return res.status(500).json({ ok: false, message: "수정 중 오류 발생" });
   }
 });
+
 /**
  * 3-1. 현장(WorkSite) 정보 수정 (PUT 요청 대응 추가)
  */
-router.put("/:id", async (req: Request, res: Response) => {
+router.put("/:id", checkLevel, async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
+    const user = (req as any).user;
     const { id } = req.params;
     const site = await WorkSite.findByPk(Number(id));
 
     if (!site) {
       await tx.rollback();
       return res.status(404).json({ ok: false, message: "현장을 찾을 수 없습니다." });
+    }
+
+    if (user.level === 9 && site.memberId !== user.id) {
+      await tx.rollback();
+      return res.status(403).json({ ok: false, message: "권한이 없습니다." });
     }
 
     await site.update(req.body, { transaction: tx });
@@ -121,16 +159,24 @@ router.put("/:id", async (req: Request, res: Response) => {
     return res.status(500).json({ ok: false, message: "수정 중 오류 발생" });
   }
 });
+
 /**
  * 4. 현장(WorkSite) 삭제 (연결된 WorkItem, Report 등 Cascade 삭제됨)
  */
-router.delete("/:id", async (req: Request, res: Response) => {
+router.delete("/:id", checkLevel, async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
+    const user = (req as any).user;
     const site = await WorkSite.findByPk(Number(req.params.id));
+    
     if (!site) {
       await tx.rollback();
       return res.status(404).json({ ok: false, message: "현장을 찾을 수 없습니다." });
+    }
+
+    if (user.level === 9 && site.memberId !== user.id) {
+      await tx.rollback();
+      return res.status(403).json({ ok: false, message: "본인의 현장만 삭제할 수 있습니다." });
     }
 
     await site.destroy({ transaction: tx });
@@ -145,14 +191,19 @@ router.delete("/:id", async (req: Request, res: Response) => {
 /**
  * 5. 🔥 특정 현장에 엑셀 데이터 업로드 (동적 파싱 & 위치 변환)
  */
-router.post("/:id/upload", upload.single("file"), async (req: Request, res: Response) => {
+router.post("/:id/upload", checkLevel, upload.single("file"), async (req: Request, res: Response) => {
   let tx: Transaction | null = null;
   try {
+    const user = (req as any).user;
     const siteId = Number(req.params.id);
     const site = await WorkSite.findByPk(siteId);
 
     if (!site) return res.status(404).json({ ok: false, message: "현장을 찾을 수 없습니다." });
     if (!req.file) return res.status(400).json({ ok: false, message: "엑셀 파일이 없습니다." });
+
+    if (user.level === 9 && site.memberId !== user.id) {
+      return res.status(403).json({ ok: false, message: "업로드 권한이 없습니다." });
+    }
 
     // 1. 엑셀 읽기
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
