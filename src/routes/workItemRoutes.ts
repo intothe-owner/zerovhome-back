@@ -239,7 +239,7 @@ router.patch("/:id/assign", async (req: Request, res: Response) => {
  * 7. 작업 보고서 A4 PDF 다운로드 API
  * GET /work-items/:id/pdf (라우터 프리픽스가 /api/work-items 이므로 실제 호출은 /api/work-items/:id/pdf 가 됨)
  */
-router.get("/:id/pdf", async (req: Request, res: Response) => {
+router.get("/:id/pdf", checkLevel, async (req: Request, res: Response) => {
   try {
     const workItemId = Number(req.params.id);
     
@@ -247,7 +247,6 @@ router.get("/:id/pdf", async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, message: "유효하지 않은 작업 ID입니다." });
     }
 
-    // 1. 보고서 결과 및 연결된 작업(WorkItem), 현장(WorkSite) 정보 조회
     const reportResult = await SiteReportResult.findOne({
       where: { workItemId },
       include: [
@@ -263,13 +262,16 @@ router.get("/:id/pdf", async (req: Request, res: Response) => {
       return res.status(404).json({ ok: false, message: "작성된 보고서가 없습니다." });
     }
 
-    // 타입 단언을 통해 안전하게 데이터 추출
     const report = reportResult as any;
     const workItem = report.workItem;
     const site = workItem?.site;
     const { textAnswers, imageAnswers } = report;
 
-    // 2. A4 규격에 맞춘 HTML 템플릿 작성
+    // 💡 1. 여기서 날짜 데이터를 파싱합니다 (generateAndUploadReportPdf와 동일한 로직)
+    const workDateStr = workItem.workDate || new Date().toISOString().split('T')[0];
+    const [signYear, signMonth, signDay] = workDateStr.split('-');
+
+    // 💡 2. 서명 영역 HTML과 CSS를 완벽한 양식으로 교체했습니다.
     const htmlContent = `
       <!DOCTYPE html>
       <html lang="ko">
@@ -289,8 +291,13 @@ router.get("/:id/pdf", async (req: Request, res: Response) => {
           .photo-box { width: 48%; border: 1px solid #ddd; padding: 5px; text-align: center; margin-bottom: 10px; box-sizing: border-box; page-break-inside: avoid; }
           .photo-box p { font-size: 13px; font-weight: bold; margin: 5px 0; background: #eee; padding: 4px; }
           .photo-box img { width: 100%; height: 160px; object-fit: contain; }
-          .signature-area { margin-top: 30px; text-align: right; font-size: 14px; page-break-inside: avoid; }
-          .signature-area img { height: 50px; vertical-align: middle; margin-left: 10px; border-bottom: 1px solid #333; }
+          
+          /* 추가된 서명 영역 스타일 */
+          .signature-section { margin-top: 40px; padding-top: 20px; text-align: right; font-size: 15px; border-top: 2px solid #222; page-break-inside: avoid; }
+          .sig-date { margin-bottom: 12px; font-weight: bold; letter-spacing: 1px; }
+          .sig-name { font-weight: bold; position: relative; display: inline-block; padding-right: 90px; }
+          .sig-mark { position: absolute; right: 0; top: 0; }
+          .sig-mark img { position: absolute; right: -20px; top: -15px; height: 50px; }
         </style>
       </head>
       <body>
@@ -322,15 +329,20 @@ router.get("/:id/pdf", async (req: Request, res: Response) => {
           `).join('')}
         </div>
 
-        <div class="signature-area">
-          <span><b>고객 서명:</b></span>
-          ${workItem?.customerSignature ? `<img src="${workItem.customerSignature}" alt="서명" />` : '<span>(서명 없음)</span>'}
+        <!-- 수정된 고객 확인 서명 영역 -->
+        <div class="signature-section">
+          <div class="sig-date">${signYear} 년 &nbsp;&nbsp;&nbsp;&nbsp; ${signMonth} 월 &nbsp;&nbsp;&nbsp;&nbsp; ${signDay} 일</div>
+          <div class="sig-name">
+            성명: ${workItem?.customerName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}
+            <span class="sig-mark">
+              (서명) ${workItem?.customerSignature ? `<img src="${workItem.customerSignature}" />` : ''}
+            </span>
+          </div>
         </div>
       </body>
       </html>
     `;
 
-    // 3. Puppeteer로 크롬 브라우저 실행
     const browser = await puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
@@ -339,7 +351,6 @@ router.get("/:id/pdf", async (req: Request, res: Response) => {
 
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' as any } as any);
 
-    // 4. A4 규격 PDF 버퍼로 변환
     const pdfBuffer = await page.pdf({
       format: "A4",
       printBackground: true,
@@ -348,7 +359,6 @@ router.get("/:id/pdf", async (req: Request, res: Response) => {
 
     await browser.close();
 
-    // 5. 클라이언트에게 PDF 파일 전송 (다운로드 처리)
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename=work_report_${workItemId}.pdf`);
     return res.send(pdfBuffer);

@@ -52,10 +52,28 @@ router.get("/work-sites/:id/report-form", async (req: Request, res: Response) =>
     const reportForm = await SiteReportForm.findOne({ where: { workSiteId } });
 
     if (!reportForm) {
-      return res.status(200).json({ ok: true, data: { categories: ["기본"], textFields: [], imageFields: [] } }); 
+      // 💡 [수정됨] "기본" 텍스트 제거하고 무조건 빈 배열([]) 반환
+      return res.status(200).json({ ok: true, data: { categories: [], textFields: [], imageFields: [] } }); 
     }
 
-    return res.status(200).json({ ok: true, data: reportForm });
+    // 💡 [핵심 방어 로직] DB에서 JSON 배열이 아닌 문자열로 반환될 경우를 대비해 파싱 처리
+    let parsedCategories = reportForm.categories;
+    let parsedTextFields = reportForm.textFields;
+    let parsedImageFields = reportForm.imageFields;
+    
+    if (typeof parsedCategories === 'string') parsedCategories = JSON.parse(parsedCategories);
+    if (typeof parsedTextFields === 'string') parsedTextFields = JSON.parse(parsedTextFields);
+    if (typeof parsedImageFields === 'string') parsedImageFields = JSON.parse(parsedImageFields);
+
+    return res.status(200).json({ 
+      ok: true, 
+      data: {
+        ...reportForm.toJSON(),
+        categories: parsedCategories || [],
+        textFields: parsedTextFields || [],
+        imageFields: parsedImageFields || []
+      }
+    });
   } catch (error) {
     console.error("보고서 양식 조회 에러:", error);
     return res.status(500).json({ ok: false, message: "서버 오류가 발생했습니다." });
@@ -80,11 +98,17 @@ router.post("/work-sites/:id/report-form", async (req: Request, res: Response) =
     let reportForm = await SiteReportForm.findOne({ where: { workSiteId }, transaction: tx });
 
     if (reportForm) {
-      reportForm = await reportForm.update({ categories, textFields, imageFields }, { transaction: tx });
+      // 💡 배열로 명확히 업데이트
+      reportForm = await reportForm.update({ 
+        categories: categories || [], 
+        textFields: textFields || [], 
+        imageFields: imageFields || [] 
+      }, { transaction: tx });
     } else {
       reportForm = await SiteReportForm.create({
         workSiteId,
-        categories: categories || ["기본"],
+        // 💡 [수정됨] "기본" 텍스트 덮어쓰기 로직 제거
+        categories: categories || [],
         textFields: textFields || [],
         imageFields: imageFields || []
       }, { transaction: tx });
@@ -101,19 +125,18 @@ router.post("/work-sites/:id/report-form", async (req: Request, res: Response) =
 });
 
 /**
- * 3. 💡 개별 작업 보고서 통합 저장 API (사진, 텍스트, 고객서명, 작성일자, 성명, '설문조사' 모두 처리)
+ * 3. 개별 작업 보고서 통합 저장 API (사진, 텍스트, 고객서명, 작성일자, 성명, '설문조사' 모두 처리)
  */
 router.post("/work-items/:id/report", async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
     const workItemId = Number(req.params.id);
     
-    // 💡 2. 프론트엔드에서 보낸 데이터 추출에 surveyAnswers와 surveyId 추가!
     const { 
       textAnswers, 
       imageAnswers,
-      surveyAnswers,     // 추가됨
-      surveyId,          // 추가됨
+      surveyAnswers,     
+      surveyId,          
       workerId, 
       customerSignature, 
       signDate, 
@@ -178,21 +201,18 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
       }, { transaction: tx });
     }
 
-    // --- 5. 💡 설문 응답(SiteSurveyResponse) 저장 영역 ---
-    // (올려주신 코드에 이 부분이 없어서 저장이 안 되었던 것입니다.)
+    // --- 5. 설문 응답(SiteSurveyResponse) 저장 영역 ---
     const hasSurveyData = surveyAnswers && Object.keys(surveyAnswers).length > 0;
 
     if (surveyId && hasSurveyData) {
       let existingSurvey = await SiteSurveyResponse.findOne({ where: { workItemId }, transaction: tx });
       
       if (existingSurvey) {
-        // 이미 있으면 업데이트
         await existingSurvey.update({ 
           answers: surveyAnswers,
           siteSurveyId: surveyId 
         }, { transaction: tx });
       } else {
-        // 없으면 새로 생성
         await SiteSurveyResponse.create({ 
           workItemId, 
           siteSurveyId: surveyId, 
@@ -201,7 +221,6 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
       }
     }
 
-    // 모든 과정이 정상적으로 끝났을 때 DB에 반영(Commit)
     await tx.commit();
 
     // PDF 자동 생성
