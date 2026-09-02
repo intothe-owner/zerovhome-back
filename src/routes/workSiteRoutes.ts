@@ -31,19 +31,22 @@ router.get("/", checkLevel, async (req: Request, res: Response) => {
       where.title = { [Op.like]: `%${keyword}%` };
     }
 
-    // 💡 유저 ID가 없는 경우 방어 코드
-    if (!user || !user.id) {
-      return res.status(401).json({ ok: false, message: "인증 정보가 올바르지 않습니다." });
+    // 💡 [핵심 방어 로직] 토큰 페이로드 구조에 따라 키 이름이 다를 수 있으므로 범용적으로 추출
+    const userId = user.id || user.userId || user.memberId || user.no;
+
+    if (!userId) {
+      console.error("[인증 에러] 토큰에서 유저 식별자를 찾을 수 없습니다. 페이로드:", user);
+      return res.status(401).json({ ok: false, message: "유저 식별자를 찾을 수 없습니다." });
     }
 
     // 💡 레벨 9 현장관리자는 본인이 등록(또는 배정받은) 현장만 조회
     if (user.level === 9) {
-      where.memberId = user.id;
+      where.memberId = userId;
     } 
     else if (user.level === 1) {
       // [레벨 1] 일반회원(현장 기사): 본인에게 배정된 작업(WorkItem)이 존재하는 현장만 조회
       const assignedItems = await WorkItem.findAll({
-        where: { assignedMemberId: user.id }, // 💡 이제 안전하게 user.id가 보장됨
+        where: { assignedMemberId: userId }, // 안전하게 추출한 userId 사용
         attributes: ['workSiteId'],
         raw: true
       });
