@@ -18,6 +18,71 @@ const upload = multer({
 // 1. 문제(Question) 엑셀 업로드 및 CRUD
 // ==========================================
 
+router.get("/categories", async (req: Request, res: Response) => {
+  try {
+    // DB에 등록된 중복 없는 회차명(examTitle)만 추출
+    const categories = await Question.findAll({
+      attributes: [[sequelize.fn('DISTINCT', sequelize.col('examTitle')), 'examTitle']],
+      order: [['examTitle', 'DESC']]
+    });
+    
+    const categoryList = categories.map(c => c.getDataValue('examTitle'));
+    return res.status(200).json({ ok: true, data: categoryList });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: "카테고리 목록 조회 실패" });
+  }
+});
+router.get("/exams/:sessionId/random-test", async (req: Request, res: Response) => {
+  try {
+    const sessionId = Number(req.params.sessionId);
+    const session = await ExamSession.findByPk(sessionId);
+    
+    if (!session) {
+      return res.status(404).json({ ok: false, message: "세션을 찾을 수 없습니다." });
+    }
+
+    const selectedExamTitle = session.getDataValue('examTitle');
+
+    // 선택한 카테고리(examTitle)에 해당하는 문제만 랜덤으로 60개 추출
+    const questions = await Question.findAll({
+      where: { examTitle: selectedExamTitle },
+      order: sequelize.random(),
+      limit: 60
+    });
+
+    if (questions.length === 0) {
+      return res.status(404).json({ ok: false, message: "해당 회차에 등록된 문제가 없습니다." });
+    }
+
+    // 보기 셔플 로직 (기존과 동일)
+    const randomizedQuestions = questions.map((q) => {
+      const qData = q.get({ plain: true });
+      const originalOptions = qData.options;
+      const originalAnswerIdx = qData.answer;
+      const correctText = originalOptions[originalAnswerIdx];
+
+      const shuffledOptions = [...originalOptions];
+      for (let i = shuffledOptions.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledOptions[i], shuffledOptions[j]] = [shuffledOptions[j], shuffledOptions[i]];
+      }
+
+      const newAnswerIdx = shuffledOptions.indexOf(correctText);
+
+      return {
+        ...qData,
+        options: shuffledOptions,
+        answer: newAnswerIdx 
+      };
+    });
+
+    return res.status(200).json({ ok: true, count: randomizedQuestions.length, data: randomizedQuestions });
+  } catch (error) {
+    console.error("랜덤 모의고사 생성 에러:", error);
+    return res.status(500).json({ ok: false, message: "모의고사 생성 중 오류 발생" });
+  }
+});
+
 /**
  * 엑셀 파일 업로드하여 문제 일괄 등록
  */
@@ -378,6 +443,79 @@ router.get("/exams/:sessionId/result", async (req: Request, res: Response) => {
     });
   } catch (error) {
     return res.status(500).json({ ok: false, message: "상세 결과 조회 실패" });
+  }
+});
+
+/**
+ * 응시 이력 삭제 API (관련 답안 데이터도 함께 삭제)
+ */
+router.delete("/exams/history/:sessionId", async (req: Request, res: Response) => {
+  const tx = await sequelize.transaction();
+  try {
+    const sessionId = Number(req.params.sessionId);
+    
+    const session = await ExamSession.findByPk(sessionId);
+    if (!session) {
+      await tx.rollback();
+      return res.status(404).json({ ok: false, message: "해당 응시 이력을 찾을 수 없습니다." });
+    }
+
+    // 1. 연관된 사용자 제출 답안 먼저 삭제 (외래키 제약조건 고려)
+    await UserAnswer.destroy({ where: { sessionId }, transaction: tx });
+
+    // 2. 응시 세션 삭제
+    await session.destroy({ transaction: tx });
+
+    await tx.commit();
+    return res.status(200).json({ ok: true, message: "응시 이력이 삭제되었습니다." });
+  } catch (error) {
+    if (tx) await tx.rollback();
+    console.error("응시 이력 삭제 에러:", error);
+    return res.status(500).json({ ok: false, message: "삭제 중 서버 오류가 발생했습니다." });
+  }
+});
+
+router.get("/questions/exams/:sessionId/incorrect", async (req: Request, res: Response) => {
+  try {
+    const sessionId = Number(req.params.sessionId);
+
+    // 1. 해당 세션에서 틀린 답안(isCorrect: false) 목록 조회
+    const userAnswers = await UserAnswer.findAll({
+      where: { sessionId, isCorrect: false },
+      include: [{ model: Question, as: 'questionInfo' }]
+    });
+
+    if (userAnswers.length === 0) {
+      return res.status(404).json({ ok: false, message: "틀린 문제가 없습니다. 100점입니다!" });
+    }
+
+    // 2. 틀린 문제들의 원본 데이터를 추출하여 보기를 다시 무작위로 섞음
+    const questions = userAnswers.map(ans => {
+      const qData = ans.getDataValue('questionInfo').get({ plain: true });
+      
+      const originalOptions = qData.options;
+      const originalAnswerIdx = qData.answer;
+      const correctText = originalOptions[originalAnswerIdx];
+
+      const shuffledOptions = [...originalOptions];
+      for (let i = shuffledOptions.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledOptions[i], shuffledOptions[j]] = [shuffledOptions[j], shuffledOptions[i]];
+      }
+
+      const newAnswerIdx = shuffledOptions.indexOf(correctText);
+
+      return {
+        ...qData,
+        options: shuffledOptions,
+        answer: newAnswerIdx 
+      };
+    });
+
+    return res.status(200).json({ ok: true, count: questions.length, data: questions });
+  } catch (error) {
+    console.error("오답 문제 조회 에러:", error);
+    return res.status(500).json({ ok: false, message: "오답 문제를 불러오는 중 오류 발생" });
   }
 });
 export default router;
