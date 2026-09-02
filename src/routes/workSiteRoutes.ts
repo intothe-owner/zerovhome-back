@@ -21,7 +21,7 @@ const upload = multer({
  */
 router.get("/", checkLevel, async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 20;
     const keyword = (req.query.keyword as string) || "";
@@ -32,12 +32,12 @@ router.get("/", checkLevel, async (req: Request, res: Response) => {
     }
 
     // 💡 레벨 9 현장관리자는 본인이 등록(또는 배정받은) 현장만 조회
-    if (user.level === 9) {
-      where.memberId = user.id;
-    }else if (user.level === 1) {
+    if (req.user.level === 9) {
+      where.memberId = req.user.id;
+    }else if (req.user.level === 1) {
         // [레벨 1] 일반회원(현장 기사): 본인에게 배정된 작업(WorkItem)이 존재하는 현장만 조회
         const assignedItems = await WorkItem.findAll({
-          where: { assignedMemberId: user.id },
+          where: { assignedMemberId: req.user.id },
           attributes: ['workSiteId'],
           raw: true
         });
