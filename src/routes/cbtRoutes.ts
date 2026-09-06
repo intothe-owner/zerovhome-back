@@ -106,7 +106,7 @@ router.post("/upload", upload.single("file"), async (req: Request, res: Response
     const errors: string[] = [];
     
     // 정답 기호를 인덱스로 매핑
-    const ansMap: Record<string, number> = { '①': 0, '②': 1, '③': 2, '④': 3 };
+    const ansMap: Record<string, number> = { '①': 0, '②': 1, '③': 2, '④': 3,'1': 0, '2': 1, '3': 2, '4': 3, };
 
     for (const [index, row] of rawRows.entries()) {
       try {
@@ -116,7 +116,11 @@ router.post("/upload", upload.single("file"), async (req: Request, res: Response
           String(row['①'] || "").trim(),
           String(row['②'] || "").trim(),
           String(row['③'] || "").trim(),
-          String(row['④'] || "").trim()
+          String(row['④'] || "").trim(),
+          String(row['1'] || "").trim(),
+          String(row['2'] || "").trim(),
+          String(row['3'] || "").trim(),
+          String(row['4'] || "").trim()
         ];
         const answerSymbol = String(row['정답'] || "").trim();
         const answerIdx = ansMap[answerSymbol] ?? 0;
