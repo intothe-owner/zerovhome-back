@@ -113,14 +113,11 @@ router.post("/upload", upload.single("file"), async (req: Request, res: Response
         const questionNumber = Number(row['번호']) || index + 1;
         const content = String(row['문제'] || "").trim();
         const options = [
-          String(row['①'] || "").trim(),
-          String(row['②'] || "").trim(),
-          String(row['③'] || "").trim(),
-          String(row['④'] || "").trim(),
-          String(row['1'] || "").trim(),
-          String(row['2'] || "").trim(),
-          String(row['3'] || "").trim(),
-          String(row['4'] || "").trim()
+          String(row['①'] || row['보기1'] || "").trim(),
+          String(row['②'] || row['보기2'] || "").trim(),
+          String(row['③'] || row['보기3'] || "").trim(),
+          String(row['④'] || row['보기4'] || "").trim(),
+
         ];
         const answerSymbol = String(row['정답'] || "").trim();
         const answerIdx = ansMap[answerSymbol] ?? 0;
