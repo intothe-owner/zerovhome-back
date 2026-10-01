@@ -239,7 +239,7 @@ router.patch("/:id/assign", async (req: Request, res: Response) => {
  * 7. 작업 보고서 A4 PDF 다운로드 API
  * GET /work-items/:id/pdf (라우터 프리픽스가 /api/work-items 이므로 실제 호출은 /api/work-items/:id/pdf 가 됨)
  */
-router.get("/:id/pdf", checkLevel, async (req: Request, res: Response) => {
+router.get("/:id/pdf",  async (req: Request, res: Response) => {
   try {
     const workItemId = Number(req.params.id);
     
