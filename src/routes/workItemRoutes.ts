@@ -242,6 +242,7 @@ router.patch("/:id/assign", async (req: Request, res: Response) => {
 router.get("/:id/pdf",  async (req: Request, res: Response) => {
   try {
     const workItemId = Number(req.params.id);
+    console.log('다운로드');
     
     if (!Number.isInteger(workItemId) || workItemId <= 0) {
       return res.status(400).json({ ok: false, message: "유효하지 않은 작업 ID입니다." });
