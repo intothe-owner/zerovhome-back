@@ -10,6 +10,7 @@ import puppeteer from "puppeteer";
 
 import { SiteReportResult } from "../models/SiteReportResult";
 import { SiteSurveyResponse } from "../models/SiteSurveyResponse";
+import axios from "axios";
 import { checkLevel } from "../middlewares/authMiddleware";
 const router = Router();
 
@@ -239,134 +240,32 @@ router.patch("/:id/assign", async (req: Request, res: Response) => {
  * 7. 작업 보고서 A4 PDF 다운로드 API
  * GET /work-items/:id/pdf (라우터 프리픽스가 /api/work-items 이므로 실제 호출은 /api/work-items/:id/pdf 가 됨)
  */
-router.get("/:id/pdf",  async (req: Request, res: Response) => {
+router.get("/:id/pdf", async (req: Request, res: Response) => {
   try {
     const workItemId = Number(req.params.id);
-    console.log('다운로드');
     
     if (!Number.isInteger(workItemId) || workItemId <= 0) {
       return res.status(400).json({ ok: false, message: "유효하지 않은 작업 ID입니다." });
     }
 
-    const reportResult = await SiteReportResult.findOne({
-      where: { workItemId },
-      include: [
-        {
-          model: WorkItem,
-          as: "workItem",
-          include: [{ model: WorkSite, as: "site" }]
-        }
-      ]
-    });
+    const reportResult = await SiteReportResult.findOne({ where: { workItemId } });
 
-    if (!reportResult) {
-      return res.status(404).json({ ok: false, message: "작성된 보고서가 없습니다." });
+    // 💡 DB에 pdfPath가 있는지 확인
+    if (!reportResult || !reportResult.pdfPath) {
+      return res.status(404).json({ ok: false, message: "PDF 파일이 아직 생성 중이거나 없습니다. 잠시 후 다시 시도해주세요." });
     }
 
-    const report = reportResult as any;
-    const workItem = report.workItem;
-    const site = workItem?.site;
-    const { textAnswers, imageAnswers } = report;
-
-    // 💡 1. 여기서 날짜 데이터를 파싱합니다 (generateAndUploadReportPdf와 동일한 로직)
-    const workDateStr = workItem.workDate || new Date().toISOString().split('T')[0];
-    const [signYear, signMonth, signDay] = workDateStr.split('-');
-
-    // 💡 2. 서명 영역 HTML과 CSS를 완벽한 양식으로 교체했습니다.
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html lang="ko">
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          @page { size: A4; margin: 15mm; }
-          body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; color: #333; }
-          h2 { text-align: center; margin-bottom: 20px; font-size: 22px; }
-          .info-box { margin-bottom: 20px; font-size: 14px; background: #f9f9f9; padding: 10px; border: 1px solid #ddd; }
-          .info-box p { margin: 5px 0; }
-          .table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          .table th, .table td { border: 1px solid #ddd; padding: 10px; font-size: 14px; }
-          .table th { background-color: #f4f4f4; width: 35%; text-align: left; }
-          .section-title { font-size: 16px; font-weight: bold; margin: 20px 0 10px 0; border-left: 4px solid #007bff; padding-left: 8px; }
-          .photos { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
-          .photo-box { width: 48%; border: 1px solid #ddd; padding: 5px; text-align: center; margin-bottom: 10px; box-sizing: border-box; page-break-inside: avoid; }
-          .photo-box p { font-size: 13px; font-weight: bold; margin: 5px 0; background: #eee; padding: 4px; }
-          .photo-box img { width: 100%; height: 160px; object-fit: contain; }
-          
-          /* 추가된 서명 영역 스타일 */
-          .signature-section { margin-top: 40px; padding-top: 20px; text-align: right; font-size: 15px; border-top: 2px solid #222; page-break-inside: avoid; }
-          .sig-date { margin-bottom: 12px; font-weight: bold; letter-spacing: 1px; }
-          .sig-name { font-weight: bold; position: relative; display: inline-block; padding-right: 90px; }
-          .sig-mark { position: absolute; right: 0; top: 0; }
-          .sig-mark img { position: absolute; right: -20px; top: -15px; height: 50px; }
-        </style>
-      </head>
-      <body>
-        <h2>${site?.title || "현장"} 작업 완료 보고서</h2>
-        
-        <div class="info-box">
-          <p><b>고객명:</b> ${workItem?.customerName || "-"}</p>
-          <p><b>작업일자:</b> ${workItem?.workDate || "-"}</p>
-          <p><b>작업담당자:</b> ${workItem?.workerName || "-"}</p>
-        </div>
-
-        <div class="section-title">상세 입력 항목</div>
-        <table class="table">
-          ${Object.entries(textAnswers || {}).map(([key, val]) => `
-            <tr>
-              <th>${key}</th>
-              <td>${val}</td>
-            </tr>
-          `).join('')}
-        </table>
-
-        <div class="section-title">현장 사진 증빙</div>
-        <div class="photos">
-          ${Object.entries(imageAnswers || {}).map(([key, url]) => `
-            <div class="photo-box">
-              <p>${key}</p>
-              <img src="${url}" alt="${key}" />
-            </div>
-          `).join('')}
-        </div>
-
-        <!-- 수정된 고객 확인 서명 영역 -->
-        <div class="signature-section">
-          <div class="sig-date">${signYear} 년 &nbsp;&nbsp;&nbsp;&nbsp; ${signMonth} 월 &nbsp;&nbsp;&nbsp;&nbsp; ${signDay} 일</div>
-          <div class="sig-name">
-            성명: ${workItem?.customerName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}
-            <span class="sig-mark">
-              (서명) ${workItem?.customerSignature ? `<img src="${workItem.customerSignature}" />` : ''}
-            </span>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-    });
-    const page = await browser.newPage();
-
-    await page.setContent(htmlContent, { waitUntil: 'networkidle0' as any } as any);
-
-    const pdfBuffer = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" },
-    });
-
-    await browser.close();
+    // 💡 S3 URL에서 파일을 가져와서 클라이언트에게 스트리밍 전송 (CORS 이슈 방지)
+    const s3Response = await axios.get(reportResult.pdfPath, { responseType: 'stream' });
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename=work_report_${workItemId}.pdf`);
-    return res.send(pdfBuffer);
+    res.setHeader("Content-Disposition", `attachment; filename="work_report_${workItemId}.pdf"`);
+    
+    s3Response.data.pipe(res);
 
   } catch (error) {
-    console.error("PDF 생성 에러:", error);
-    return res.status(500).json({ ok: false, message: "PDF 생성 중 서버 오류가 발생했습니다." });
+    console.error("PDF 다운로드 에러:", error);
+    return res.status(500).json({ ok: false, message: "PDF 다운로드 중 서버 오류가 발생했습니다." });
   }
 });
 //배정업데이트

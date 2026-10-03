@@ -5,7 +5,7 @@ import { WorkItem } from "../models/WorkItem";
 import { SiteReportForm } from "../models/SiteReportForm";
 import { SiteReportResult } from "../models/SiteReportResult";
 // 💡 1. 반드시 설문조사 모델을 임포트 해야 합니다!
-import { SiteSurveyResponse } from "../models/SiteSurveyResponse"; 
+import { SiteSurveyResponse } from "../models/SiteSurveyResponse";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { generateAndUploadReportPdf } from "../services/pdfService";
 
@@ -28,7 +28,7 @@ async function uploadBase64ImageToS3(base64DataUrl: string, prefix: string): Pro
   const base64Data = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
   const buffer = Buffer.from(base64Data, "base64");
   const contentType = base64DataUrl.split(";")[0].split(":")[1] || "image/png";
-  
+
   const fileName = `${prefix}_${Date.now()}.png`;
   const s3Key = `uploads/reports/${fileName}`;
 
@@ -53,20 +53,20 @@ router.get("/work-sites/:id/report-form", async (req: Request, res: Response) =>
 
     if (!reportForm) {
       // 💡 [수정됨] "기본" 텍스트 제거하고 무조건 빈 배열([]) 반환
-      return res.status(200).json({ ok: true, data: { categories: [], textFields: [], imageFields: [] } }); 
+      return res.status(200).json({ ok: true, data: { categories: [], textFields: [], imageFields: [] } });
     }
 
     // 💡 [핵심 방어 로직] DB에서 JSON 배열이 아닌 문자열로 반환될 경우를 대비해 파싱 처리
     let parsedCategories = reportForm.categories;
     let parsedTextFields = reportForm.textFields;
     let parsedImageFields = reportForm.imageFields;
-    
+
     if (typeof parsedCategories === 'string') parsedCategories = JSON.parse(parsedCategories);
     if (typeof parsedTextFields === 'string') parsedTextFields = JSON.parse(parsedTextFields);
     if (typeof parsedImageFields === 'string') parsedImageFields = JSON.parse(parsedImageFields);
 
-    return res.status(200).json({ 
-      ok: true, 
+    return res.status(200).json({
+      ok: true,
       data: {
         ...reportForm.toJSON(),
         categories: parsedCategories || [],
@@ -99,10 +99,10 @@ router.post("/work-sites/:id/report-form", async (req: Request, res: Response) =
 
     if (reportForm) {
       // 💡 배열로 명확히 업데이트
-      reportForm = await reportForm.update({ 
-        categories: categories || [], 
-        textFields: textFields || [], 
-        imageFields: imageFields || [] 
+      reportForm = await reportForm.update({
+        categories: categories || [],
+        textFields: textFields || [],
+        imageFields: imageFields || []
       }, { transaction: tx });
     } else {
       reportForm = await SiteReportForm.create({
@@ -131,17 +131,17 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
     const workItemId = Number(req.params.id);
-    
-    const { 
-      textAnswers, 
+
+    const {
+      textAnswers,
       imageAnswers,
-      surveyAnswers,     
-      surveyId,          
-      workerId, 
-      customerSignature, 
-      signDate, 
-      signName 
-    } = req.body; 
+      surveyAnswers,
+      surveyId,
+      workerId,
+      customerSignature,
+      signDate,
+      signName
+    } = req.body;
 
     if (!workerId) {
       await tx.rollback();
@@ -154,16 +154,23 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
       return res.status(404).json({ ok: false, message: "작업을 찾을 수 없습니다." });
     }
 
-    // --- 1. 보고서 사진 데이터 S3 업로드 처리 ---
+    // --- 💡 [핵심 성능 개선] 보고서 사진 데이터 S3 병렬 업로드 처리 ---
     const processedImageAnswers: any = {};
     if (imageAnswers && typeof imageAnswers === "object") {
-      for (const [key, value] of Object.entries(imageAnswers)) {
+      // 여러 장의 사진 업로드 작업을 Promise 배열로 생성
+      const uploadPromises = Object.entries(imageAnswers).map(async ([rawKey, value]) => {
+        const key = rawKey as string; // 👈 key를 string으로 명시
         if (typeof value === "string" && isBase64DataUrl(value)) {
           const uploadedUrl = await uploadBase64ImageToS3(value, `work_${workItemId}_${key.replace(/\s+/g, '_')}`);
-          processedImageAnswers[key] = uploadedUrl;
-        } else {
-          processedImageAnswers[key] = value;
+          return [key, uploadedUrl] as [string, string];
         }
+        return [key, value] as [string, any]; // 이미 URL인 경우 그대로 반환
+      });
+
+      // Promise.all을 통해 모든 사진을 병렬로 동시 업로드
+      const uploadedResults = await Promise.all(uploadPromises);
+      for (const [key, val] of uploadedResults) {
+        processedImageAnswers[key] = val;
       }
     }
 
@@ -172,7 +179,7 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
     if (customerSignature && isBase64DataUrl(customerSignature)) {
       finalSignatureUrl = await uploadBase64ImageToS3(customerSignature, `signature_work_${workItemId}`);
     } else if (customerSignature === "") {
-      finalSignatureUrl = null; 
+      finalSignatureUrl = null;
     }
 
     // --- 3. WorkItem 업데이트 (서명, 날짜, 이름 및 상태 갱신) ---
@@ -206,35 +213,48 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
 
     if (surveyId && hasSurveyData) {
       let existingSurvey = await SiteSurveyResponse.findOne({ where: { workItemId }, transaction: tx });
-      
+
       if (existingSurvey) {
-        await existingSurvey.update({ 
+        await existingSurvey.update({
           answers: surveyAnswers,
-          siteSurveyId: surveyId 
+          siteSurveyId: surveyId
         }, { transaction: tx });
       } else {
-        await SiteSurveyResponse.create({ 
-          workItemId, 
-          siteSurveyId: surveyId, 
-          answers: surveyAnswers 
+        await SiteSurveyResponse.create({
+          workItemId,
+          siteSurveyId: surveyId,
+          answers: surveyAnswers
         }, { transaction: tx });
       }
     }
 
     await tx.commit();
 
-    // PDF 자동 생성
+    // PDF 자동 생성 주석 처리됨 (다운로드 시에만 생성하도록 유지)
     try {
-      const pdfUrl = await generateAndUploadReportPdf(reportResult.id);
-      console.log(`[PDF 생성 완료] ${pdfUrl}`);
+      // const pdfUrl = await generateAndUploadReportPdf(reportResult.id);
+      // console.log(`[PDF 생성 완료] ${pdfUrl}`);
+      generateAndUploadReportPdf(reportResult.id)
+        .then(async (pdfUrl) => {
+          console.log(`[백그라운드 PDF 생성 완료] ${pdfUrl}`);
+
+          // 생성된 PDF의 S3 URL을 SiteReportResult 테이블의 pdfPath 컬럼에 업데이트
+          await SiteReportResult.update(
+            { pdfPath: pdfUrl },
+            { where: { id: reportResult.id } }
+          );
+        })
+        .catch((pdfError) => {
+          console.error("[백그라운드 PDF 생성 에러]:", pdfError);
+        });
     } catch (pdfError) {
       console.error("[PDF 생성 에러]:", pdfError);
     }
 
-    return res.status(200).json({ 
-      ok: true, 
-      data: reportResult, 
-      message: "작업 보고서, 설문 응답, 서명이 성공적으로 저장되었습니다." 
+    return res.status(200).json({
+      ok: true,
+      data: reportResult,
+      message: "작업 보고서, 설문 응답, 서명이 성공적으로 저장되었습니다."
     });
 
   } catch (error) {
