@@ -248,24 +248,31 @@ router.get("/:id/pdf", async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, message: "유효하지 않은 작업 ID입니다." });
     }
 
-    const reportResult = await SiteReportResult.findOne({ where: { workItemId } });
+    const reportResult = await SiteReportResult.findOne({
+      where: { workItemId }
+    });
 
-    // 💡 DB에 pdfPath가 있는지 확인
-    if (!reportResult || !reportResult.pdfPath) {
-      return res.status(404).json({ ok: false, message: "PDF 파일이 아직 생성 중이거나 없습니다. 잠시 후 다시 시도해주세요." });
+    if (!reportResult) {
+      return res.status(404).json({ ok: false, message: "작성된 보고서가 없습니다." });
     }
 
-    // 💡 S3 URL에서 파일을 가져와서 클라이언트에게 스트리밍 전송 (CORS 이슈 방지)
+    // 💡 방금 수정을 눌러서 아직 PDF가 만들어지는 중이라면 에러로 안내
+    if (!reportResult.pdfPath) {
+      return res.status(404).json({ ok: false, message: "새로운 PDF 파일을 생성 중입니다. 약 5초 뒤에 다시 시도해주세요." });
+    }
+
+    // 💡 저장되어있는 pdfPath(S3 링크)에서 바로 파일을 가져와서 프론트엔드로 전달
     const s3Response = await axios.get(reportResult.pdfPath, { responseType: 'stream' });
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="work_report_${workItemId}.pdf"`);
     
+    // 파일 스트림 응답
     s3Response.data.pipe(res);
 
   } catch (error) {
     console.error("PDF 다운로드 에러:", error);
-    return res.status(500).json({ ok: false, message: "PDF 다운로드 중 서버 오류가 발생했습니다." });
+    return res.status(500).json({ ok: false, message: "PDF 다운로드 중 오류가 발생했습니다." });
   }
 });
 //배정업데이트

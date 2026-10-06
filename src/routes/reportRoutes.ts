@@ -4,9 +4,8 @@ import { WorkSite } from "../models/WorkSite";
 import { WorkItem } from "../models/WorkItem";
 import { SiteReportForm } from "../models/SiteReportForm";
 import { SiteReportResult } from "../models/SiteReportResult";
-// 💡 1. 반드시 설문조사 모델을 임포트 해야 합니다!
-import { SiteSurveyResponse } from "../models/SiteSurveyResponse";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { SiteSurveyResponse } from "../models/SiteSurveyResponse"; 
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3"; // 👈 DeleteObjectCommand 추가
 import { generateAndUploadReportPdf } from "../services/pdfService";
 
 const router = Router();
@@ -28,7 +27,7 @@ async function uploadBase64ImageToS3(base64DataUrl: string, prefix: string): Pro
   const base64Data = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
   const buffer = Buffer.from(base64Data, "base64");
   const contentType = base64DataUrl.split(";")[0].split(":")[1] || "image/png";
-
+  
   const fileName = `${prefix}_${Date.now()}.png`;
   const s3Key = `uploads/reports/${fileName}`;
 
@@ -43,6 +42,24 @@ async function uploadBase64ImageToS3(base64DataUrl: string, prefix: string): Pro
   return `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
 }
 
+// 💡 [새로 추가] 기존 S3 파일 삭제 함수
+async function deleteS3FileByUrl(fileUrl: string) {
+  try {
+    if (!fileUrl) return;
+    const urlObj = new URL(fileUrl);
+    const s3Key = urlObj.pathname.substring(1); // 맨 앞의 '/' 제거
+
+    const deleteCommand = new DeleteObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET_NAME!,
+      Key: decodeURIComponent(s3Key),
+    });
+    await s3.send(deleteCommand);
+    console.log(`[S3 기존 파일 삭제 완료] ${s3Key}`);
+  } catch (err) {
+    console.error("[S3 기존 파일 삭제 실패]:", err);
+  }
+}
+
 /**
  * 1. 현장별 보고서 입력 양식 조회 API
  */
@@ -52,21 +69,19 @@ router.get("/work-sites/:id/report-form", async (req: Request, res: Response) =>
     const reportForm = await SiteReportForm.findOne({ where: { workSiteId } });
 
     if (!reportForm) {
-      // 💡 [수정됨] "기본" 텍스트 제거하고 무조건 빈 배열([]) 반환
-      return res.status(200).json({ ok: true, data: { categories: [], textFields: [], imageFields: [] } });
+      return res.status(200).json({ ok: true, data: { categories: [], textFields: [], imageFields: [] } }); 
     }
 
-    // 💡 [핵심 방어 로직] DB에서 JSON 배열이 아닌 문자열로 반환될 경우를 대비해 파싱 처리
     let parsedCategories = reportForm.categories;
     let parsedTextFields = reportForm.textFields;
     let parsedImageFields = reportForm.imageFields;
-
+    
     if (typeof parsedCategories === 'string') parsedCategories = JSON.parse(parsedCategories);
     if (typeof parsedTextFields === 'string') parsedTextFields = JSON.parse(parsedTextFields);
     if (typeof parsedImageFields === 'string') parsedImageFields = JSON.parse(parsedImageFields);
 
-    return res.status(200).json({
-      ok: true,
+    return res.status(200).json({ 
+      ok: true, 
       data: {
         ...reportForm.toJSON(),
         categories: parsedCategories || [],
@@ -98,16 +113,14 @@ router.post("/work-sites/:id/report-form", async (req: Request, res: Response) =
     let reportForm = await SiteReportForm.findOne({ where: { workSiteId }, transaction: tx });
 
     if (reportForm) {
-      // 💡 배열로 명확히 업데이트
-      reportForm = await reportForm.update({
-        categories: categories || [],
-        textFields: textFields || [],
-        imageFields: imageFields || []
+      reportForm = await reportForm.update({ 
+        categories: categories || [], 
+        textFields: textFields || [], 
+        imageFields: imageFields || [] 
       }, { transaction: tx });
     } else {
       reportForm = await SiteReportForm.create({
         workSiteId,
-        // 💡 [수정됨] "기본" 텍스트 덮어쓰기 로직 제거
         categories: categories || [],
         textFields: textFields || [],
         imageFields: imageFields || []
@@ -125,23 +138,23 @@ router.post("/work-sites/:id/report-form", async (req: Request, res: Response) =
 });
 
 /**
- * 3. 개별 작업 보고서 통합 저장 API (사진, 텍스트, 고객서명, 작성일자, 성명, '설문조사' 모두 처리)
+ * 3. 개별 작업 보고서 통합 저장 API
  */
 router.post("/work-items/:id/report", async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
     const workItemId = Number(req.params.id);
-
-    const {
-      textAnswers,
+    
+    const { 
+      textAnswers, 
       imageAnswers,
-      surveyAnswers,
-      surveyId,
-      workerId,
-      customerSignature,
-      signDate,
-      signName
-    } = req.body;
+      surveyAnswers,     
+      surveyId,          
+      workerId, 
+      customerSignature, 
+      signDate, 
+      signName 
+    } = req.body; 
 
     if (!workerId) {
       await tx.rollback();
@@ -154,35 +167,30 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
       return res.status(404).json({ ok: false, message: "작업을 찾을 수 없습니다." });
     }
 
-    // --- 💡 [핵심 성능 개선] 보고서 사진 데이터 S3 병렬 업로드 처리 ---
-    const processedImageAnswers: any = {};
+    const processedImageAnswers: Record<string, any> = {};
     if (imageAnswers && typeof imageAnswers === "object") {
-      // 여러 장의 사진 업로드 작업을 Promise 배열로 생성
       const uploadPromises = Object.entries(imageAnswers).map(async ([rawKey, value]) => {
-        const key = rawKey as string; // 👈 key를 string으로 명시
+        const key = rawKey as string;
         if (typeof value === "string" && isBase64DataUrl(value)) {
           const uploadedUrl = await uploadBase64ImageToS3(value, `work_${workItemId}_${key.replace(/\s+/g, '_')}`);
           return [key, uploadedUrl] as [string, string];
         }
-        return [key, value] as [string, any]; // 이미 URL인 경우 그대로 반환
+        return [key, value] as [string, any]; 
       });
 
-      // Promise.all을 통해 모든 사진을 병렬로 동시 업로드
       const uploadedResults = await Promise.all(uploadPromises);
       for (const [key, val] of uploadedResults) {
         processedImageAnswers[key] = val;
       }
     }
 
-    // --- 2. 고객 서명 S3 업로드 처리 ---
     let finalSignatureUrl = item.customerSignature;
     if (customerSignature && isBase64DataUrl(customerSignature)) {
       finalSignatureUrl = await uploadBase64ImageToS3(customerSignature, `signature_work_${workItemId}`);
     } else if (customerSignature === "") {
-      finalSignatureUrl = null;
+      finalSignatureUrl = null; 
     }
 
-    // --- 3. WorkItem 업데이트 (서명, 날짜, 이름 및 상태 갱신) ---
     await item.update({
       customerSignature: finalSignatureUrl,
       workDate: signDate || item.workDate,
@@ -190,77 +198,81 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
       status: finalSignatureUrl ? "COMPLETED" : item.status
     }, { transaction: tx });
 
-    // --- 4. 보고서 폼 데이터(SiteReportResult) 업데이트 ---
     let reportResult = await SiteReportResult.findOne({ where: { workItemId }, transaction: tx });
+    
+    // 💡 [핵심 수정] 새 문서를 저장하기 전 기존 PDF URL 기억해두기
+    const oldPdfPath = reportResult?.pdfPath;
 
     if (reportResult) {
       reportResult = await reportResult.update({
         workerId,
         textAnswers,
-        imageAnswers: processedImageAnswers
+        imageAnswers: processedImageAnswers,
+        pdfPath: null // 👈 수정을 했으므로 기존 PDF 경로를 일시적으로 비워서 유저가 옛날 파일을 다운받지 못하게 방지
       }, { transaction: tx });
     } else {
       reportResult = await SiteReportResult.create({
         workItemId,
         workerId,
         textAnswers: textAnswers || {},
-        imageAnswers: processedImageAnswers
+        imageAnswers: processedImageAnswers,
+        pdfPath: null
       }, { transaction: tx });
     }
 
-    // --- 5. 설문 응답(SiteSurveyResponse) 저장 영역 ---
     const hasSurveyData = surveyAnswers && Object.keys(surveyAnswers).length > 0;
-
     if (surveyId && hasSurveyData) {
       let existingSurvey = await SiteSurveyResponse.findOne({ where: { workItemId }, transaction: tx });
-
+      
       if (existingSurvey) {
-        await existingSurvey.update({
+        await existingSurvey.update({ 
           answers: surveyAnswers,
-          siteSurveyId: surveyId
+          siteSurveyId: surveyId 
         }, { transaction: tx });
       } else {
-        await SiteSurveyResponse.create({
-          workItemId,
-          siteSurveyId: surveyId,
-          answers: surveyAnswers
+        await SiteSurveyResponse.create({ 
+          workItemId, 
+          siteSurveyId: surveyId, 
+          answers: surveyAnswers 
         }, { transaction: tx });
       }
     }
 
     await tx.commit();
 
-    // PDF 자동 생성 주석 처리됨 (다운로드 시에만 생성하도록 유지)
-    try {
-      // const pdfUrl = await generateAndUploadReportPdf(reportResult.id);
-      // console.log(`[PDF 생성 완료] ${pdfUrl}`);
-      generateAndUploadReportPdf(reportResult.id)
-        .then(async (pdfUrl) => {
-          console.log(`[백그라운드 PDF 생성 완료] ${pdfUrl}`);
-
-          // 생성된 PDF의 S3 URL을 SiteReportResult 테이블의 pdfPath 컬럼에 업데이트
-          await SiteReportResult.update(
-            { pdfPath: pdfUrl },
-            { where: { id: reportResult.id } }
-          );
-        })
-        .catch((pdfError) => {
-          console.error("[백그라운드 PDF 생성 에러]:", pdfError);
-        });
-    } catch (pdfError) {
-      console.error("[PDF 생성 에러]:", pdfError);
-    }
-
-    return res.status(200).json({
-      ok: true,
-      data: reportResult,
-      message: "작업 보고서, 설문 응답, 서명이 성공적으로 저장되었습니다."
+    // 💡 1. 사용자에게 빠른 응답 먼저 전달 (로딩창 제거)
+    res.status(200).json({ 
+      ok: true, 
+      data: reportResult, 
+      message: "저장되었습니다. 새 PDF 파일을 생성 중입니다." 
     });
+
+    // 💡 2. 응답이 끝난 후 백그라운드에서 PDF 생성 및 S3 파일 교체 작업 실행
+    generateAndUploadReportPdf(reportResult.id)
+      .then(async (pdfUrl) => {
+        console.log(`[백그라운드 PDF 생성 완료] ${pdfUrl}`);
+        
+        // 새로 만든 PDF URL 업데이트
+        await SiteReportResult.update(
+          { pdfPath: pdfUrl },
+          { where: { id: reportResult.id } }
+        );
+
+        // 💡 3. 새 파일이 무사히 올라갔다면, 기존 S3 파일 완전히 삭제
+        if (oldPdfPath) {
+          await deleteS3FileByUrl(oldPdfPath);
+        }
+      })
+      .catch((pdfError) => {
+        console.error("[백그라운드 PDF 생성 에러]:", pdfError);
+      });
 
   } catch (error) {
     if (tx) await tx.rollback();
     console.error("작업 통합 저장 에러:", error);
-    return res.status(500).json({ ok: false, message: "보고서 저장 중 서버 오류가 발생했습니다." });
+    if (!res.headersSent) {
+      return res.status(500).json({ ok: false, message: "보고서 저장 중 서버 오류가 발생했습니다." });
+    }
   }
 });
 
