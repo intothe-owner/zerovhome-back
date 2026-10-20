@@ -138,7 +138,7 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
         @page { size: A4; margin: 15mm; }
         body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; margin: 0; padding: 0; color: #333; }
         
-        .title { text-align: center; margin-bottom: 20px; font-size: 24px; font-weight: bold; letter-spacing: 1px; }
+        .title { text-align: center; margin-bottom: 10px; font-size: 20px; font-weight: normal; letter-spacing: 1px; }
         
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         th, td { border: 1px solid #777; box-sizing: border-box; }
@@ -168,16 +168,6 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
         <tbody>
           <!-- 1. 텍스트 설정 영역 렌더링 -->
           ${textHtml}
-
-          <!-- 2. 고객 서명 영역 (텍스트의 마지막에 자연스럽게 붙음) -->
-          <tr class="sign-row">
-            <th class="th-label">확 인 자</th>
-            <td colspan="3">
-               성명: ${workItem?.customerName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}
-               ${workItem?.customerSignature ? `<img src="${workItem.customerSignature}" class="sign-img" />` : ''}
-            </td>
-          </tr>
-
           <!-- 3. 사진 설정 영역 렌더링 -->
           ${imageHtml}
         </tbody>
