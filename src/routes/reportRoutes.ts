@@ -5,8 +5,9 @@ import { WorkItem } from "../models/WorkItem";
 import { SiteReportForm } from "../models/SiteReportForm";
 import { SiteReportResult } from "../models/SiteReportResult";
 import { SiteSurveyResponse } from "../models/SiteSurveyResponse"; 
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3"; // 👈 DeleteObjectCommand 추가
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { generateAndUploadReportPdf } from "../services/pdfService";
+import sharp from "sharp"; // 👈 sharp 라이브러리 추가
 
 const router = Router();
 
@@ -23,31 +24,41 @@ function isBase64DataUrl(data: string): boolean {
   return Boolean(data && data.startsWith("data:image/"));
 }
 
+// 💡 [수정됨] sharp를 이용해 업로드 전 이미지 리사이즈 및 압축 수행
 async function uploadBase64ImageToS3(base64DataUrl: string, prefix: string): Promise<string> {
   const base64Data = base64DataUrl.replace(/^data:image\/\w+;base64,/, "");
-  const buffer = Buffer.from(base64Data, "base64");
-  const contentType = base64DataUrl.split(";")[0].split(":")[1] || "image/png";
+  const originalBuffer = Buffer.from(base64Data, "base64");
   
-  const fileName = `${prefix}_${Date.now()}.png`;
+  // 👈 sharp를 이용한 최적화 작업
+  const optimizedBuffer = await sharp(originalBuffer)
+    .resize({ 
+      width: 1280, // 가로 최대 1280px로 제한 (스마트폰 원본보다 작게 만들어 용량 대폭 감소)
+      withoutEnlargement: true // 이미지가 1280px보다 작을 경우 억지로 키우지 않음
+    })
+    .jpeg({ quality: 90 }) // 시각적 퀄리티 저하를 느끼기 힘든 90% 수준의 고화질 JPEG로 변환
+    .toBuffer();
+  
+  // 변환된 이미지에 맞춰 확장자와 ContentType 고정
+  const fileName = `${prefix}_${Date.now()}.jpg`; 
   const s3Key = `uploads/reports/${fileName}`;
 
   const uploadCommand = new PutObjectCommand({
     Bucket: process.env.AWS_S3_BUCKET_NAME!,
     Key: s3Key,
-    Body: buffer,
-    ContentType: contentType,
+    Body: optimizedBuffer, // 👈 최적화된 버퍼 사용
+    ContentType: "image/jpeg", // 👈 JPEG로 변환했으므로 타입 변경
   });
 
   await s3.send(uploadCommand);
   return `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
 }
 
-// 💡 [새로 추가] 기존 S3 파일 삭제 함수
+// 기존 S3 파일 삭제 함수
 async function deleteS3FileByUrl(fileUrl: string) {
   try {
     if (!fileUrl) return;
     const urlObj = new URL(fileUrl);
-    const s3Key = urlObj.pathname.substring(1); // 맨 앞의 '/' 제거
+    const s3Key = urlObj.pathname.substring(1); 
 
     const deleteCommand = new DeleteObjectCommand({
       Bucket: process.env.AWS_S3_BUCKET_NAME!,
@@ -200,7 +211,6 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
 
     let reportResult = await SiteReportResult.findOne({ where: { workItemId }, transaction: tx });
     
-    // 💡 [핵심 수정] 새 문서를 저장하기 전 기존 PDF URL 기억해두기
     const oldPdfPath = reportResult?.pdfPath;
 
     if (reportResult) {
@@ -208,7 +218,7 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
         workerId,
         textAnswers,
         imageAnswers: processedImageAnswers,
-        pdfPath: null // 👈 수정을 했으므로 기존 PDF 경로를 일시적으로 비워서 유저가 옛날 파일을 다운받지 못하게 방지
+        pdfPath: null
       }, { transaction: tx });
     } else {
       reportResult = await SiteReportResult.create({
@@ -240,25 +250,21 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
 
     await tx.commit();
 
-    // 💡 1. 사용자에게 빠른 응답 먼저 전달 (로딩창 제거)
     res.status(200).json({ 
       ok: true, 
       data: reportResult, 
       message: "저장되었습니다. 새 PDF 파일을 생성 중입니다." 
     });
 
-    // 💡 2. 응답이 끝난 후 백그라운드에서 PDF 생성 및 S3 파일 교체 작업 실행
     generateAndUploadReportPdf(reportResult.id)
       .then(async (pdfUrl) => {
         console.log(`[백그라운드 PDF 생성 완료] ${pdfUrl}`);
         
-        // 새로 만든 PDF URL 업데이트
         await SiteReportResult.update(
           { pdfPath: pdfUrl },
           { where: { id: reportResult.id } }
         );
 
-        // 💡 3. 새 파일이 무사히 올라갔다면, 기존 S3 파일 완전히 삭제
         if (oldPdfPath) {
           await deleteS3FileByUrl(oldPdfPath);
         }

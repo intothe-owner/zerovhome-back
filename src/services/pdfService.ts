@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { SiteReportResult } from "../models/SiteReportResult";
 import { WorkItem } from "../models/WorkItem";
 import { WorkSite } from "../models/WorkSite";
+import { SiteReportForm } from "../models";
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
@@ -12,6 +13,214 @@ const s3 = new S3Client({
   },
 });
 
+export async function generateAndUploadReportPdf(reportResultId: number): Promise<string> {
+  // 1. DB에서 리포트 데이터 및 관계 데이터 조회
+  const report = await SiteReportResult.findByPk(reportResultId, {
+    include: [
+      {
+        model: WorkItem,
+        as: "workItem",
+        include: [{ model: WorkSite, as: "site" }]
+      }
+    ]
+  });
+
+  if (!report || !report.workItem) throw new Error("보고서 데이터를 찾을 수 없습니다.");
+
+  const workItem = report.workItem as any;
+  const site = workItem.site;
+  const textAnswers = report.textAnswers || {};
+  const imageAnswers = report.imageAnswers || {};
+  
+  // 💡 2. 현장에 설정된 폼 양식(Layout) 가져오기
+  const reportForm = await SiteReportForm.findOne({ where: { workSiteId: workItem.workSiteId } });
+  
+  // JSON 파싱 방어 로직
+  const textFields = reportForm?.textFields ? (typeof reportForm.textFields === 'string' ? JSON.parse(reportForm.textFields) : reportForm.textFields) : [];
+  const imageFields = reportForm?.imageFields ? (typeof reportForm.imageFields === 'string' ? JSON.parse(reportForm.imageFields) : reportForm.imageFields) : [];
+  const categories = reportForm?.categories ? (typeof reportForm.categories === 'string' ? JSON.parse(reportForm.categories) : reportForm.categories) : [];
+  const validCategories = (categories.length > 0 && categories[0] !== '기본') ? categories : [''];
+
+  // 💡 3. 텍스트 필드 HTML 생성 (HALF/FULL 레이아웃 반영)
+  let textHtml = '';
+  let i = 0;
+  while (i < textFields.length) {
+    const field1 = textFields[i];
+    const val1 = textAnswers[field1.name] || '';
+
+    if (field1.layout === 'HALF') {
+      // 다음 필드도 HALF인지 확인하여 한 줄에 2개(4칸) 배치
+      if (i + 1 < textFields.length && textFields[i+1].layout === 'HALF') {
+        const field2 = textFields[i+1];
+        const val2 = textAnswers[field2.name] || '';
+        textHtml += `
+          <tr>
+            <th class="th-label">${field1.name}</th>
+            <td class="td-value">${val1}</td>
+            <th class="th-label">${field2.name}</th>
+            <td class="td-value">${val2}</td>
+          </tr>
+        `;
+        i += 2;
+      } else {
+        // 짝이 안 맞는 HALF 필드는 나머지 3칸을 병합
+        textHtml += `
+          <tr>
+            <th class="th-label">${field1.name}</th>
+            <td class="td-value" colspan="3">${val1}</td>
+          </tr>
+        `;
+        i += 1;
+      }
+    } else {
+      // FULL 필드는 한 줄 전체(3칸 병합) 사용
+      textHtml += `
+        <tr>
+          <th class="th-label">${field1.name}</th>
+          <td class="td-value" colspan="3">${val1}</td>
+        </tr>
+      `;
+      i += 1;
+    }
+  }
+
+  // 💡 4. 이미지 필드 HTML 생성 (여백 없이 100% 꽉 차게)
+  let imageHtml = '';
+  for (const cat of validCategories) {
+    const catPrefix = cat ? `${cat}_` : '';
+    const catDisplay = cat ? `[${cat}] ` : '';
+
+    for (const field of imageFields) {
+      if (field.layout === 'HALF') {
+        const key1 = `${catPrefix}${field.name} 1`;
+        const key2 = `${catPrefix}${field.name} 2`;
+        const img1 = imageAnswers[key1];
+        const img2 = imageAnswers[key2];
+
+        // 사진이 하나라도 있는 경우에만 해당 행 렌더링
+        if (img1 || img2) {
+          imageHtml += `
+            <tr class="image-header-row">
+              <th colspan="2" class="th-image-label">${catDisplay}${field.name} 1</th>
+              <th colspan="2" class="th-image-label">${catDisplay}${field.name} 2</th>
+            </tr>
+            <tr>
+              <td colspan="2" class="td-image">${img1 ? `<img src="${img1}" />` : ''}</td>
+              <td colspan="2" class="td-image">${img2 ? `<img src="${img2}" />` : ''}</td>
+            </tr>
+          `;
+        }
+      } else {
+        const key = `${catPrefix}${field.name}`;
+        const img = imageAnswers[key];
+
+        if (img) {
+          imageHtml += `
+            <tr class="image-header-row">
+              <th colspan="4" class="th-image-label">${catDisplay}${field.name}</th>
+            </tr>
+            <tr>
+              <td colspan="4" class="td-image">${img ? `<img src="${img}" />` : ''}</td>
+            </tr>
+          `;
+        }
+      }
+    }
+  }
+
+  // 5. 최종 HTML 템플릿 결합
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="ko">
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        @page { size: A4; margin: 15mm; }
+        body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; margin: 0; padding: 0; color: #333; }
+        
+        .title { text-align: center; margin-bottom: 20px; font-size: 24px; font-weight: bold; letter-spacing: 1px; }
+        
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        th, td { border: 1px solid #777; box-sizing: border-box; }
+        
+        /* 텍스트 영역 스타일 */
+        .th-label { background-color: #f9f9f9; width: 18%; text-align: center; padding: 10px 5px; font-size: 13px; font-weight: normal; letter-spacing: 3px; }
+        .td-value { width: 32%; padding: 10px 12px; font-size: 13px; }
+        
+        /* 이미지 영역 라벨 스타일 */
+        .th-image-label { background-color: #fff; text-align: center; padding: 12px; font-size: 16px; font-weight: normal; }
+        
+        /* 💡 이미지 셀 100% 꽉 채우기 (여백 제거) */
+        .td-image { padding: 0 !important; vertical-align: top; text-align: center; height: 350px; }
+        .td-image img { width: 100%; height: 100%; object-fit: cover; display: block; margin: 0; }
+        
+        /* 고객 서명란 추가 */
+        .sign-row th { background-color: #f9f9f9; text-align: center; padding: 15px 5px; font-size: 14px; font-weight: normal; letter-spacing: 5px; }
+        .sign-row td { text-align: right; padding-right: 30px; font-size: 16px; font-weight: bold; position: relative; }
+        .sign-img { height: 45px; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
+      </style>
+    </head>
+    <body>
+      <!-- 첨부 이미지 형식의 제목 구성 -->
+      <div class="title">${workItem?.customerName || ""} ${site?.title || ""} 작업보고서</div>
+      
+      <table>
+        <tbody>
+          <!-- 1. 텍스트 설정 영역 렌더링 -->
+          ${textHtml}
+
+          <!-- 2. 고객 서명 영역 (텍스트의 마지막에 자연스럽게 붙음) -->
+          <tr class="sign-row">
+            <th class="th-label">확 인 자</th>
+            <td colspan="3">
+               성명: ${workItem?.customerName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}
+               ${workItem?.customerSignature ? `<img src="${workItem.customerSignature}" class="sign-img" />` : ''}
+            </td>
+          </tr>
+
+          <!-- 3. 사진 설정 영역 렌더링 -->
+          ${imageHtml}
+        </tbody>
+      </table>
+    </body>
+    </html>
+  `;
+
+  // 6. Puppeteer로 PDF 생성
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+  });
+
+  const page = await browser.newPage();
+  await page.setContent(htmlContent, { waitUntil: 'networkidle0' as any } as any);
+  const pdfBuffer = await page.pdf({ 
+    format: 'A4', 
+    printBackground: true,
+    margin: { top: "15mm", bottom: "15mm", left: "15mm", right: "15mm" }
+  });
+  
+  await browser.close();
+
+  // 7. S3 업로드
+  const fileName = `report_pdf_${workItem.id}_${Date.now()}.pdf`;
+  const s3Key = `uploads/reports/pdfs/${fileName}`;
+  
+  const uploadCommand = new PutObjectCommand({
+    Bucket: process.env.AWS_S3_BUCKET_NAME!,
+    Key: s3Key,
+    Body: pdfBuffer,
+    ContentType: 'application/pdf',
+  });
+  
+  await s3.send(uploadCommand);
+  
+  const finalPdfUrl = `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+  await report.update({ pdfPath: finalPdfUrl });
+
+  return finalPdfUrl;
+}
+/*
 export async function generateAndUploadReportPdf(reportResultId: number): Promise<string> {
   // 1. DB에서 리포트 데이터 및 관계 데이터 조회
   const report = await SiteReportResult.findByPk(reportResultId, {
@@ -141,4 +350,4 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
   await report.update({ pdfPath: finalPdfUrl });
 
   return finalPdfUrl;
-}
+}*/
