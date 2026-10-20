@@ -31,6 +31,7 @@ async function uploadBase64ImageToS3(base64DataUrl: string, prefix: string): Pro
   
   // 👈 sharp를 이용한 최적화 작업
   const optimizedBuffer = await sharp(originalBuffer)
+    .rotate()
     .resize({ 
       width: 1280, // 가로 최대 1280px로 제한 (스마트폰 원본보다 작게 만들어 용량 대폭 감소)
       withoutEnlargement: true // 이미지가 1280px보다 작을 경우 억지로 키우지 않음
