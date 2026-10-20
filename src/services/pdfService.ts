@@ -32,7 +32,16 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
   const textAnswers = report.textAnswers || {};
   const imageAnswers = report.imageAnswers || {};
   
-  // 💡 2. 현장에 설정된 폼 양식(Layout) 가져오기
+  // 💡 [핵심 추가] PDF 상단 제목 동적 생성 (엑셀 경로당 항목 확인)
+  let pdfTitle = `${workItem?.customerName || ""} ${site?.title || ""} 작업보고서`; // 기본값
+  if (workItem?.rowData) {
+    const centerKey = Object.keys(workItem.rowData).find(key => key.includes("경로당"));
+    if (centerKey && workItem.rowData[centerKey]) {
+      pdfTitle = `${workItem.rowData[centerKey]} 공기청정기 세척 보고서`;
+    }
+  }
+  
+  // 2. 현장에 설정된 폼 양식(Layout) 가져오기
   const reportForm = await SiteReportForm.findOne({ where: { workSiteId: workItem.workSiteId } });
   
   // JSON 파싱 방어 로직
@@ -41,7 +50,7 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
   const categories = reportForm?.categories ? (typeof reportForm.categories === 'string' ? JSON.parse(reportForm.categories) : reportForm.categories) : [];
   const validCategories = (categories.length > 0 && categories[0] !== '기본') ? categories : [''];
 
-  // 💡 3. 텍스트 필드 HTML 생성 (HALF/FULL 레이아웃 반영)
+  // 3. 텍스트 필드 HTML 생성 (HALF/FULL 레이아웃 반영)
   let textHtml = '';
   let i = 0;
   while (i < textFields.length) {
@@ -84,7 +93,7 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
     }
   }
 
-  // 💡 4. 이미지 필드 HTML 생성 (SPLIT/HALF/FULL 3가지 레이아웃 완벽 지원)
+  // 4. 이미지 필드 HTML 생성 (SPLIT/HALF/FULL 3가지 레이아웃 완벽 지원)
   let imageHtml = '';
   for (const cat of validCategories) {
     const catPrefix = cat ? `${cat}_` : '';
@@ -111,7 +120,7 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
           `;
         }
       } else if (field.layout === 'SPLIT') {
-        // 💡 새롭게 추가된 SPLIT 레이아웃 (각각 다른 이름 지정)
+        // 새롭게 추가된 SPLIT 레이아웃 (각각 다른 이름 지정)
         const key1 = `${catPrefix}${field.name}`;
         const key2 = `${catPrefix}${field.name2}`;
         const img1 = imageAnswers[key1];
@@ -130,7 +139,7 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
           `;
         }
       } else {
-        // 💡 FULL 레이아웃 (한 줄 전체 사용)
+        // FULL 레이아웃 (한 줄 전체 사용)
         const key = `${catPrefix}${field.name}`;
         const img = imageAnswers[key];
 
@@ -158,7 +167,7 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
         @page { size: A4; margin: 15mm; }
         body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; margin: 0; padding: 0; color: #333; }
         
-        .title { text-align: center; margin-bottom: 10px; font-size: 20px; font-weight: normal; letter-spacing: 1px; }
+        .title { text-align: center; margin-bottom: 20px; font-size: 24px; font-weight: bold; letter-spacing: 1px; }
         
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         th, td { border: 1px solid #777; box-sizing: border-box; }
@@ -170,7 +179,7 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
         /* 이미지 영역 라벨 스타일 */
         .th-image-label { background-color: #fff; text-align: center; padding: 12px; font-size: 16px; font-weight: normal; }
         
-        /* 💡 이미지 셀 100% 꽉 채우기 (여백 제거) */
+        /* 이미지 셀 100% 꽉 채우기 (여백 제거) */
         .td-image { padding: 0 !important; vertical-align: top; text-align: center; height: 350px; }
         .td-image img { width: 100%; height: 100%; object-fit: cover; display: block; margin: 0; }
         
@@ -181,13 +190,23 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
       </style>
     </head>
     <body>
-      <!-- 첨부 이미지 형식의 제목 구성 -->
-      <div class="title">${workItem?.customerName || ""} ${site?.title || ""} 작업보고서</div>
+      <!-- 💡 동적으로 설정된 타이틀 렌더링 -->
+      <div class="title">${pdfTitle}</div>
       
       <table>
         <tbody>
           <!-- 1. 텍스트 설정 영역 렌더링 -->
           ${textHtml}
+          
+          <!-- 2. 고객 서명 영역 (텍스트의 마지막에 자연스럽게 붙음) -->
+          <tr class="sign-row">
+            <th class="th-label">확 인 자</th>
+            <td colspan="3">
+               성명: ${workItem?.customerName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}
+               ${workItem?.customerSignature ? `<img src="${workItem.customerSignature}" class="sign-img" />` : ''}
+            </td>
+          </tr>
+
           <!-- 3. 사진 설정 영역 렌더링 -->
           ${imageHtml}
         </tbody>
