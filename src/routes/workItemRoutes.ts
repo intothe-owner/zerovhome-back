@@ -63,8 +63,15 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     if (keyword) {
-      where.customerName = { [Op.like]: `%${keyword}%` };
-    }
+  Object.assign(where, {
+    [Op.or]: [
+      { customerName: { [Op.like]: `%${keyword}%` } },
+      sequelize.where(sequelize.cast(sequelize.col('rowData'), 'CHAR'), {
+        [Op.like]: `%${keyword}%`
+      })
+    ]
+  });
+}
 
     const offset = (page - 1) * pageSize;
     const { count, rows } = await WorkItem.findAndCountAll({
