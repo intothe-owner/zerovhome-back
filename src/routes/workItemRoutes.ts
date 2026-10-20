@@ -63,16 +63,16 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     if (keyword) {
-  Object.assign(where, {
-    [Op.or]: [
-      { customerName: { [Op.like]: `%${keyword}%` } },
-      // 💡 'rowData' 대신 실제 DB 테이블의 컬럼명인 'row_data'를 적어줍니다.
-      sequelize.where(sequelize.cast(sequelize.col('row_data'), 'CHAR'), {
-        [Op.like]: `%${keyword}%`
-      })
-    ]
-  });
-}
+      Object.assign(where, {
+        [Op.or]: [
+          { customerName: { [Op.like]: `%${keyword}%` } },
+          // 💡 'rowData' 대신 실제 DB 테이블의 컬럼명인 'row_data'를 적어줍니다.
+          sequelize.where(sequelize.cast(sequelize.col('row_data'), 'CHAR'), {
+            [Op.like]: `%${keyword}%`
+          })
+        ]
+      });
+    }
 
     const offset = (page - 1) * pageSize;
     const { count, rows } = await WorkItem.findAndCountAll({
