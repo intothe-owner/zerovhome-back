@@ -84,7 +84,7 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
     }
   }
 
-  // 💡 4. 이미지 필드 HTML 생성 (여백 없이 100% 꽉 차게)
+  // 💡 4. 이미지 필드 HTML 생성 (SPLIT/HALF/FULL 3가지 레이아웃 완벽 지원)
   let imageHtml = '';
   for (const cat of validCategories) {
     const catPrefix = cat ? `${cat}_` : '';
@@ -110,7 +110,27 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
             </tr>
           `;
         }
+      } else if (field.layout === 'SPLIT') {
+        // 💡 새롭게 추가된 SPLIT 레이아웃 (각각 다른 이름 지정)
+        const key1 = `${catPrefix}${field.name}`;
+        const key2 = `${catPrefix}${field.name2}`;
+        const img1 = imageAnswers[key1];
+        const img2 = imageAnswers[key2];
+
+        if (img1 || img2) {
+          imageHtml += `
+            <tr class="image-header-row">
+              <th colspan="2" class="th-image-label">${catDisplay}${field.name}</th>
+              <th colspan="2" class="th-image-label">${catDisplay}${field.name2}</th>
+            </tr>
+            <tr>
+              <td colspan="2" class="td-image">${img1 ? `<img src="${img1}" />` : ''}</td>
+              <td colspan="2" class="td-image">${img2 ? `<img src="${img2}" />` : ''}</td>
+            </tr>
+          `;
+        }
       } else {
+        // 💡 FULL 레이아웃 (한 줄 전체 사용)
         const key = `${catPrefix}${field.name}`;
         const img = imageAnswers[key];
 
