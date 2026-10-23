@@ -197,16 +197,6 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
         <tbody>
           <!-- 1. 텍스트 설정 영역 렌더링 -->
           ${textHtml}
-          
-          <!-- 2. 고객 서명 영역 (텍스트의 마지막에 자연스럽게 붙음) -->
-          <tr class="sign-row">
-            <th class="th-label">확 인 자</th>
-            <td colspan="3">
-               성명: ${workItem?.customerName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}
-               ${workItem?.customerSignature ? `<img src="${workItem.customerSignature}" class="sign-img" />` : ''}
-            </td>
-          </tr>
-
           <!-- 3. 사진 설정 영역 렌더링 -->
           ${imageHtml}
         </tbody>
