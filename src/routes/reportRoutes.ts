@@ -206,8 +206,7 @@ router.post("/work-items/:id/report", async (req: Request, res: Response) => {
     await item.update({
       customerSignature: finalSignatureUrl,
       workDate: signDate || item.workDate,
-      customerName: signName || item.customerName,
-      status: finalSignatureUrl ? "COMPLETED" : item.status
+      customerName: signName || item.customerName
     }, { transaction: tx });
 
     let reportResult = await SiteReportResult.findOne({ where: { workItemId }, transaction: tx });
