@@ -329,4 +329,31 @@ router.post("/assign", async (req: Request, res: Response) => {
   }
 });
 
+// 💡 주의: 이 라우터는 router.get("/:id") 등 :id를 사용하는 라우터보다 위쪽에 배치해야 합니다.
+router.post("/bulk-status", async (req: Request, res: Response) => {
+  try {
+    const { itemIds, status } = req.body;
+
+    if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({ ok: false, message: "상태를 변경할 작업이 선택되지 않았습니다." });
+    }
+    if (!status) {
+      return res.status(400).json({ ok: false, message: "변경할 상태 값이 없습니다." });
+    }
+
+    // 선택된 모든 작업의 상태를 일괄 업데이트
+    await WorkItem.update(
+      { status: status },
+      { where: { id: itemIds } }
+    );
+
+    return res.status(200).json({ 
+      ok: true, 
+      message: `${itemIds.length}건의 작업 상태가 [${status}]로 변경되었습니다.` 
+    });
+  } catch (error) {
+    console.error("일괄 상태 변경 에러:", error);
+    return res.status(500).json({ ok: false, message: "상태 변경 중 서버 오류가 발생했습니다." });
+  }
+});
 export default router;
