@@ -180,7 +180,7 @@ export async function generateAndUploadReportPdf(reportResultId: number): Promis
         .th-image-label { background-color: #fff; text-align: center; padding: 12px; font-size: 16px; font-weight: normal; }
         
         /* 이미지 셀 100% 꽉 채우기 (여백 제거) */
-        .td-image { padding: 0 !important; vertical-align: top; text-align: center; height: 260px; }
+        .td-image { padding: 0 !important; vertical-align: top; text-align: center; height: 280px; }
         .td-image img { width: 100%; height: 100%; object-fit: cover; display: block; margin: 0; }
         tr { page-break-inside: avoid; }
         /* 고객 서명란 추가 */
