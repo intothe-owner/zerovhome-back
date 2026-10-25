@@ -28,7 +28,7 @@ const s3 = new S3Client({
 });
 
 // ==========================================
-// 📁 Multer S3 업로드 설정
+// 📁 Multer S3 업로드 설정 (수정됨)
 // ==========================================
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const ext = path.extname(file.originalname).toLowerCase();
@@ -43,10 +43,18 @@ export const upload = multer({
     s3: s3,
     bucket: process.env.AWS_S3_BUCKET_NAME as string,
     contentType: multerS3.AUTO_CONTENT_TYPE,
+    // 👇 S3 저장 경로 및 파일명 규칙 설정
     key: (req, file, cb) => {
+      // 1. 한글 파일명 깨짐 방지
       const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+      
+      // 2. 고유 식별자 생성 (중복 방지용)
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-      cb(null, `uploads/${uniqueSuffix}${path.extname(originalName)}`);
+      
+      // 💡 3. 핵심 변경 포인트: 'uploads/고유번호/원본파일명' 구조로 저장
+      // 기존 -> `uploads/${uniqueSuffix}${path.extname(originalName)}` (예: uploads/16123-123.jpg)
+      // 변경 -> `uploads/${uniqueSuffix}/${originalName}` (예: uploads/16123-123/회사소개서.pdf)
+      cb(null, `uploads/${uniqueSuffix}/${originalName}`);
     }
   }),
   fileFilter,
