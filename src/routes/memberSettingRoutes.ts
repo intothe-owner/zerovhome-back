@@ -16,6 +16,9 @@ router.get('/', async (req: Request, res: Response) => {
         useName: true,
         useNickname: true,
         useMobile: true,
+        useAddress: false,
+        useLocation: false, // ✨ 신규 추가
+        useDob: false,
         useTermsOfService: true,
         usePrivacyPolicy: true,
         useApproval: false,
@@ -34,8 +37,8 @@ router.get('/', async (req: Request, res: Response) => {
     });
 
     // 활성화된 약관/정책 조회
-    const termsPolicy:any = await Policy.findOne({ where: { type: 'TERMS', isActive: true } });
-    const privacyPolicy:any = await Policy.findOne({ where: { type: 'PRIVACY', isActive: true } });
+    const termsPolicy: any = await Policy.findOne({ where: { type: 'TERMS', isActive: true } });
+    const privacyPolicy: any = await Policy.findOne({ where: { type: 'PRIVACY', isActive: true } });
 
     // 프론트엔드로 전달할 데이터 병합
     const responseData = {
@@ -56,7 +59,7 @@ router.put('/', async (req: Request, res: Response) => {
   try {
     // 프론트엔드에서 넘어온 데이터 중 정책 관련 내용과 설정 분리
     const { termsContent, privacyContent, ...updateData } = req.body;
-    
+
     const formattedData: any = {};
     for (const key in updateData) {
       const val = updateData[key];
@@ -67,7 +70,7 @@ router.put('/', async (req: Request, res: Response) => {
 
     // 1. 회원 기본 설정 업데이트
     await MemberSetting.update(formattedData, { where: { id: 1 } });
-    
+
     // 2. 이용약관(TERMS) 저장 또는 업데이트
     if (termsContent !== undefined) {
       const terms = await Policy.findOne({ where: { type: 'TERMS', isActive: true } });
