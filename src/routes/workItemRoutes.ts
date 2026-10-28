@@ -35,14 +35,12 @@ router.get("/", async (req: Request, res: Response) => {
   try {
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 20; 
-    const { workSiteId, status, keyword, workerName, assignedMemberId } = req.query;
+    const { workSiteId, status, keyword, workerName, assignedMemberId, sort } = req.query; // 💡 sort 추가
 
     const where: WhereOptions = {};
 
-    if (workSiteId) {
-      where.workSiteId = Number(workSiteId);
-    }
-
+    // ... 기존 where 조건 필터링 로직 동일 ...
+    if (workSiteId) { where.workSiteId = Number(workSiteId); }
     if (status) {
       if (typeof status === 'string' && status.includes(',')) {
         where.status = { [Op.in]: status.split(',') }; 
@@ -50,8 +48,6 @@ router.get("/", async (req: Request, res: Response) => {
         where.status = status;
       }
     }
-
-    // 💡 작업자 필터링 로직 수정 (미배정 또는 특정 회원 ID 처리)
     if (assignedMemberId) {
       if (assignedMemberId === "UNASSIGNED") {
         where.assignedMemberId = { [Op.or]: [null, ''] };
@@ -61,12 +57,10 @@ router.get("/", async (req: Request, res: Response) => {
     } else if (workerName === '미배정') {
       where.assignedMemberId = { [Op.or]: [null, ''] };
     }
-
     if (keyword) {
       Object.assign(where, {
         [Op.or]: [
           { customerName: { [Op.like]: `%${keyword}%` } },
-          // 💡 'rowData' 대신 실제 DB 테이블의 컬럼명인 'row_data'를 적어줍니다.
           sequelize.where(sequelize.cast(sequelize.col('row_data'), 'CHAR'), {
             [Op.like]: `%${keyword}%`
           })
@@ -74,13 +68,24 @@ router.get("/", async (req: Request, res: Response) => {
       });
     }
 
+    // 💡 [핵심] 정렬(Sort) 로직 추가
+    let orderCondition: any = [
+      ["routeOrder", "ASC"], 
+      ["createdAt", "DESC"]
+    ]; // 기본 정렬
+
+    if (sort === "workDate") {
+      orderCondition = [["workDate", "DESC"], ["createdAt", "DESC"]]; // 작업완료 최신순
+    } else if (sort === "createdAt") {
+      orderCondition = [["createdAt", "DESC"]]; // 등록일 최신순
+    } else if (sort === "routeOrder") {
+      orderCondition = [["routeOrder", "ASC"]]; // 번호순
+    }
+
     const offset = (page - 1) * pageSize;
     const { count, rows } = await WorkItem.findAndCountAll({
       where,
-      order: [
-        ["routeOrder", "ASC"], 
-        ["createdAt", "DESC"]
-      ],
+      order: orderCondition, // 💡 동적 정렬 적용
       offset,
       limit: pageSize,
     });
@@ -97,7 +102,6 @@ router.get("/", async (req: Request, res: Response) => {
     return res.status(500).json({ ok: false, message: "서버 오류가 발생했습니다." });
   }
 });
-
 /**
  * 2. 작업 상세 조회
  */
