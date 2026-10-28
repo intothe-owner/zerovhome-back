@@ -75,7 +75,7 @@ router.get("/", async (req: Request, res: Response) => {
     ]; // 기본 정렬
 
     if (sort === "workDate") {
-      orderCondition = [["workDate", "DESC"], ["createdAt", "DESC"]]; // 작업완료 최신순
+      orderCondition = [["workDate", "DESC"], ["updatedAt", "DESC"]]; // 작업완료 최신순
     } else if (sort === "createdAt") {
       orderCondition = [["createdAt", "DESC"]]; // 등록일 최신순
     } else if (sort === "routeOrder") {
