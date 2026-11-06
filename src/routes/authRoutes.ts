@@ -8,7 +8,7 @@ import { MemberDevice } from '../models/MemberDevice';
 import { checkLevel } from '../middlewares/authMiddleware';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET||'userLogin';
+const JWT_SECRET = process.env.JWT_SECRET || 'userLogin';
 
 // 1. 회원가입 API (파일 업로드 적용 및 레벨 분기 처리)
 router.post('/register', uploadAny.single('approvalFile'), async (req: Request, res: Response) => {
@@ -27,26 +27,20 @@ router.post('/register', uploadAny.single('approvalFile'), async (req: Request, 
       address_detail,
       dob,
       companyName,
-      isApp // ⭐ 프론트에서 보낸 명시적 플래그 받기
+      isApp
     } = req.body;
 
-    // 아이디 중복 체크
     const existingUser = await Member.findOne({ where: { loginId } });
     if (existingUser) {
       return res.status(400).json({ success: false, message: '이미 사용 중인 아이디(이메일)입니다.' });
     }
 
-    // 비밀번호 암호화 (Salt 10)
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // ✨ 일반/조합원 구분에 따른 레벨 부여 로직
-    let finalLevel = 1; // 일반회원(NORMAL) 기본 레벨 1
+    let finalLevel = 1; 
 
     if (isApp === 'true' || isApp === true) {
-      // 💡 앱에서 가입한 경우 무조건 최고관리자 레벨 10 부여
       finalLevel = 10;
     } else {
-      // 기존 웹 가입 로직 유지
       if (memberType === 'UNION') {
         const setting = await MemberSetting.findByPk(1);
         const useApproval = setting ? setting.getDataValue('useApproval') : false;
@@ -58,15 +52,12 @@ router.post('/register', uploadAny.single('approvalFile'), async (req: Request, 
         }
       }
     }
-    // 일반회원(NORMAL)인 경우는 if문을 타지 않아 무조건 레벨 1이 유지됩니다.
 
-    // 파일이 업로드된 경우 URL 추출
     let approvalFileUrl = '';
     if (req.file) {
       approvalFileUrl = (req.file as any).location || req.file.path;
     }
 
-    // 회원 생성
     const newMember = await Member.create({
       memberType: memberType || 'NORMAL',
       loginId,
@@ -81,7 +72,7 @@ router.post('/register', uploadAny.single('approvalFile'), async (req: Request, 
       address_detail,
       dob,
       companyName,
-      level: finalLevel, // ✨ 분기 처리된 레벨 적용
+      level: finalLevel,
       snsProvider: 'LOCAL',
       approvalFileUrl
     });
@@ -93,12 +84,10 @@ router.post('/register', uploadAny.single('approvalFile'), async (req: Request, 
   }
 });
 
-// 2. 로그인 API (기존 유지: 레벨이 승인 대기 레벨(0)인 경우만 차단)
+// 2. 로그인 API
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    // 💡 프론트엔드에서 로그인 시 fcm 토큰과 기기 ID도 같이 받습니다.
     const { loginId, password, deviceToken, deviceId } = req.body;
-    console.log(req.body);
 
     const user = await Member.findOne({ where: { loginId } });
     if (!user) {
@@ -120,7 +109,6 @@ router.post('/login', async (req: Request, res: Response) => {
 
     const memberId = user.getDataValue('id');
 
-    // ⭐ 핵심: 로그인 성공 직후, 바로 member_device 테이블에 토큰 저장/업데이트
     if (deviceToken) {
       const [device, created] = await MemberDevice.findOrCreate({
         where: { deviceId: deviceId || deviceToken },
@@ -165,12 +153,85 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// 3. 최고관리자(Level 10) 존재 여부 확인 API
+// ✨ 3. 내 정보 불러오기 API (/api/auth/info)
+router.get('/info', checkLevel, async (req: Request, res: Response) => {
+  try {
+    const memberId = req.user.id; // checkLevel 미들웨어 통과 후 설정된 유저 ID
+
+    const user = await Member.findByPk(memberId, {
+      attributes: { exclude: ['password'] } // 비밀번호는 제외하고 전송
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: '회원 정보를 찾을 수 없습니다.' });
+    }
+
+    res.status(200).json({ success: true, data: user });
+  } catch (error) {
+    console.error('내 정보 조회 오류:', error);
+    res.status(500).json({ success: false, message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// ✨ 4. 내 정보 수정하기 API (/api/auth/update)
+router.put('/update', checkLevel, uploadAny.single('approvalFile'), async (req: Request, res: Response) => {
+  try {
+    const memberId = req.user.id; // 수정 주체는 무조건 로그인한 본인
+    
+    const {
+      password,
+      name,
+      nickname,
+      phone,
+      mobile,
+      postcode,
+      address,
+      address_detail,
+      latitude,
+      longitude,
+      companyName
+    } = req.body;
+
+    const updateData: any = {};
+    
+    if (name) updateData.name = name;
+    if (nickname) updateData.nickname = nickname;
+    if (phone) updateData.phone = phone;
+    if (mobile) updateData.mobile = mobile;
+    if (postcode) updateData.postcode = postcode;
+    if (address) updateData.address = address;
+    if (address_detail) updateData.address_detail = address_detail;
+    if (latitude) updateData.latitude = latitude;
+    if (longitude) updateData.longitude = longitude;
+    if (companyName) updateData.companyName = companyName;
+
+    // ✨ 프론트엔드에서 증빙서류를 첨부하여 전송한 경우
+    if (req.file) {
+      updateData.approvalFileUrl = (req.file as any).location || req.file.path;
+    }
+
+    // 비밀번호를 변경하고자 입력한 경우 해싱 처리
+    if (password) {
+      updateData.password = await bcrypt.hash(password, 10);
+    }
+
+    const [updatedRows] = await Member.update(updateData, { where: { id: memberId } });
+    
+    if (updatedRows === 0) {
+      return res.status(400).json({ success: false, message: '변경된 내용이 없거나 회원을 찾을 수 없습니다.' });
+    }
+
+    res.status(200).json({ success: true, message: '회원 정보가 성공적으로 수정되었습니다.' });
+  } catch (error) {
+    console.error('내 정보 수정 오류:', error);
+    res.status(500).json({ success: false, message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 5. 최고관리자 존재 여부 확인 API
 router.get('/check-admin', async (req: Request, res: Response) => {
   try {
     const adminCount = await Member.count({ where: { level: 10 } });
-    console.log(adminCount);
-
     res.status(200).json({ success: true, hasAdmin: adminCount > 0 });
   } catch (error) {
     console.error('관리자 확인 오류:', error);
@@ -178,7 +239,7 @@ router.get('/check-admin', async (req: Request, res: Response) => {
   }
 });
 
-// 4. 최초 최고관리자 생성 API (Bootstrapping)
+// 6. 최초 최고관리자 생성 API (Bootstrapping)
 router.post('/setup-admin', async (req: Request, res: Response) => {
   try {
     const adminCount = await Member.count({ where: { level: 10 } });
@@ -214,17 +275,14 @@ router.post('/setup-admin', async (req: Request, res: Response) => {
   }
 });
 
-// 로그인 후 클라이언트가 FCM 토큰을 서버로 전송할 때 호출하는 API
+// 7. FCM 토큰 저장 API
 router.post('/token', async (req: Request, res: Response) => {
   try {
-    // ✨ req.user 대신 req.body에서 memberId를 직접 추출합니다.
     const { deviceToken, deviceType, deviceId, memberId } = req.body;
 
     if (!memberId) {
       return res.status(400).json({ success: false, message: '회원 ID가 필요합니다.' });
     }
-
-    console.log('FCM 토큰 저장 API 진입 완료');
 
     const [device, created] = await MemberDevice.findOrCreate({
       where: { deviceId: deviceId || deviceToken },
@@ -246,4 +304,5 @@ router.post('/token', async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: '서버 오류' });
   }
 });
+
 export default router;
