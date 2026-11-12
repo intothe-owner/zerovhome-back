@@ -11,7 +11,12 @@ router.post('/track', async (req: Request, res: Response) => {
   try {
     const { pageUrl } = req.body;
     
-    const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown_ip';
+    // 💡 수정된 IP 추출 로직
+    const forwarded = req.headers['x-forwarded-for'] as string;
+    const ipAddress = forwarded 
+      ? forwarded.split(',')[0].trim() // 여러 IP가 배열로 올 경우 첫 번째(실제 클라이언트) IP 추출
+      : req.ip || req.socket.remoteAddress || 'unknown_ip';
+
     const userAgent = req.headers['user-agent'] || 'unknown_agent';
     
     // 한국 시간(KST) 기준 날짜 (YYYY-MM-DD)

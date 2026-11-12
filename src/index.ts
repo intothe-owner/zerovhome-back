@@ -32,6 +32,7 @@ import workItemRoutes from './routes/workItemRoutes';
 import reportRoutes from './routes/reportRoutes';
 import siteSurveyRoutes from './routes/surveyRoutes';
 import cbtRoutes from './routes/cbtRoutes';
+import cookieParser from 'cookie-parser';
 
 // DB 동기화 및 서버 실행
 import path from 'path';
@@ -61,7 +62,8 @@ const corsOptions: cors.CorsOptions = {
 };
 console.log(process.env.GEMINI_API_KEY);
 app.use(cors(corsOptions));
-
+app.set('trust proxy', true);
+app.use(cookieParser());
 // 💡 2. Body Parser 설정
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));

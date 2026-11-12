@@ -225,8 +225,26 @@ router.get('/posts/:postId', checkLevel, async (req: Request, res: Response) => 
       return res.status(403).json({ success: false, message: '이 게시글을 읽을 수 있는 권한이 없습니다.' });
     }
 
-    await post.increment('hitCount', { by: 1 }); 
-    await post.reload();
+    // 💡 [수정됨] 쿠키를 확인하여 조회수 중복 증가 방지
+    // viewed_posts 쿠키가 있으면 배열로 파싱, 없으면 빈 배열
+    let viewedPosts: string[] = req.cookies.viewed_posts 
+      ? req.cookies.viewed_posts.split(',') 
+      : [];
+
+    if (!viewedPosts.includes(String(postId))) {
+      // 해당 게시글을 처음 보는 경우에만 조회수 증가
+      await post.increment('hitCount', { by: 1 }); 
+      await post.reload();
+
+      // 읽은 게시글 목록에 추가 후 쿠키 업데이트 (24시간 유지)
+      viewedPosts.push(String(postId));
+      res.cookie('viewed_posts', viewedPosts.join(','), {
+        maxAge: 24 * 60 * 60 * 1000, // 24시간
+        httpOnly: true, // XSS 방지용 (프론트 JS에서 접근 불가)
+        secure: process.env.NODE_ENV === 'production', // https 환경일 경우 true
+        sameSite: 'lax'
+      });
+    }
 
     const prevPost = await Post.findOne({
       where: { 
