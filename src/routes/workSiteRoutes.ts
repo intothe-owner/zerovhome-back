@@ -17,7 +17,36 @@ const upload = multer({
 });
 
 /**
- * 1. 현장(WorkSite) 목록 조회 (💡 권한별 뷰 분기 적용)
+ * 💡 [신규 추가] 내 현장 목록 조회 (기업회원 대시보드 전용)
+ * GET /api/work-sites/my-sites
+ */
+router.get("/my-sites", checkLevel, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    
+    // 토큰 페이로드 구조에 따라 범용적으로 식별자 추출
+    const userId = user.id || user.userId || user.memberId || user.no;
+
+    if (!userId) {
+      console.error("[인증 에러] 토큰에서 유저 식별자를 찾을 수 없습니다. 페이로드:", user);
+      return res.status(401).json({ ok: false, message: "유저 식별자를 찾을 수 없습니다." });
+    }
+
+    // 본인(기업회원) 계정으로 등록했거나 배정된 현장만 조건 검색
+    const sites = await WorkSite.findAll({
+      where: { memberId: userId },
+      order: [["createdAt", "DESC"]],
+    });
+
+    return res.status(200).json({ ok: true, data: sites });
+  } catch (error) {
+    console.error("내 현장 목록 조회 에러:", error);
+    return res.status(500).json({ ok: false, message: "서버 오류가 발생했습니다." });
+  }
+});
+
+/**
+ * 1. 현장(WorkSite) 전체/권한별 목록 조회 (어드민 또는 통합 뷰 용도)
  */
 router.get("/", checkLevel, async (req: Request, res: Response) => {
   try {
@@ -31,26 +60,21 @@ router.get("/", checkLevel, async (req: Request, res: Response) => {
       where.title = { [Op.like]: `%${keyword}%` };
     }
 
-    // 💡 [핵심 방어 로직] 토큰 페이로드 구조에 따라 키 이름이 다를 수 있으므로 범용적으로 추출
     const userId = user.id || user.userId || user.memberId || user.no;
 
     if (!userId) {
-      console.error("[인증 에러] 토큰에서 유저 식별자를 찾을 수 없습니다. 페이로드:", user);
       return res.status(401).json({ ok: false, message: "유저 식별자를 찾을 수 없습니다." });
     }
 
-    // 💡 레벨 9 현장관리자는 본인이 등록(또는 배정받은) 현장만 조회
+    // 관리자(레벨 10)가 아닌 레벨 9(현장관리자/기업회원)일 경우의 기본 방어선 유지
     if (user.level === 9) {
       where.memberId = userId;
-    } 
-    else if (user.level === 1) {
-      // [레벨 1] 일반회원(현장 기사): 본인에게 배정된 작업(WorkItem)이 존재하는 현장만 조회
+    } else if (user.level === 1) {
       const assignedItems = await WorkItem.findAll({
-        where: { assignedMemberId: userId }, // 안전하게 추출한 userId 사용
+        where: { assignedMemberId: userId },
         attributes: ['workSiteId'],
         raw: true
       });
-      
       const siteIds = assignedItems.map(item => item.workSiteId);
       where.id = { [Op.in]: siteIds.length > 0 ? siteIds : [0] }; 
     }
@@ -71,21 +95,29 @@ router.get("/", checkLevel, async (req: Request, res: Response) => {
 });
 
 /**
- * 2. 현장(WorkSite) 등록 (엑셀 업로드 전, 껍데기 생성)
+ * 2. 현장(WorkSite) 등록 (💡 프론트엔드 연동: address 파라미터 추가 & 자동 memberId 맵핑)
  */
 router.post("/", checkLevel, async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
     const user = (req as any).user;
-    const { title, description, hasSurvey, listVisibleFields, detailVisibleFields, mobileListVisibleFields } = req.body;
+    // 💡 프론트엔드에서 보낸 address 포함
+    const { title, address, description, hasSurvey, listVisibleFields, detailVisibleFields, mobileListVisibleFields } = req.body;
+    
+    const userId = user.id || user.userId || user.memberId || user.no;
 
     if (!title) {
       await tx.rollback();
       return res.status(400).json({ ok: false, message: "현장명은 필수입니다." });
     }
+    if (!userId) {
+      await tx.rollback();
+      return res.status(401).json({ ok: false, message: "인증 정보가 올바르지 않습니다." });
+    }
 
     const newSite = await WorkSite.create({
-      memberId: user.level === 9 ? user.id : null, // 💡 레벨 9면 자기 ID, 아니면 null
+      // 💡 최고관리자가 아닌 일반 등록이면 무조건 등록하는 토큰의 주인을 담당자로 맵핑
+      memberId: user.level !== 10 ? userId : null,
       title,
       description: description || null,
       hasSurvey: hasSurvey === true || hasSurvey === "true",
@@ -104,12 +136,13 @@ router.post("/", checkLevel, async (req: Request, res: Response) => {
 });
 
 /**
- * 3. 현장(WorkSite) 정보 수정 및 💡 담당자 배정 처리
+ * 3. 현장(WorkSite) 정보 수정 및 담당자 배정 처리
  */
 router.patch("/:id", checkLevel, async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
     const user = (req as any).user;
+    const userId = user.id || user.userId || user.memberId || user.no;
     const { id } = req.params;
     const site = await WorkSite.findByPk(Number(id));
 
@@ -118,22 +151,19 @@ router.patch("/:id", checkLevel, async (req: Request, res: Response) => {
       return res.status(404).json({ ok: false, message: "현장을 찾을 수 없습니다." });
     }
 
-    // 💡 [핵심 방어 로직] memberId 배정을 시도하는 경우
     if (req.body.memberId !== undefined) {
-      // 1. 레벨 10 최고관리자만 배정 가능
       if (user.level !== 10) {
         await tx.rollback();
         return res.status(403).json({ ok: false, message: "담당자 배정 권한이 없습니다." });
       }
-      // 2. 이미 담당자가 있는 경우(null이 아닌 경우) 배정 불가
-      if (site.memberId !== null) {
+      if (site.memberId !== null && site.memberId !== req.body.memberId) {
         await tx.rollback();
         return res.status(400).json({ ok: false, message: "이미 담당자가 배정된 현장입니다." });
       }
     }
 
-    // 💡 레벨 9 현장관리자는 남의 현장(본인 ID가 아닌 현장) 수정 불가
-    if (user.level === 9 && site.memberId !== user.id) {
+    // 💡 본인의 현장인지 체크 로직 강화
+    if (user.level === 9 && site.memberId !== userId) {
       await tx.rollback();
       return res.status(403).json({ ok: false, message: "본인의 현장만 수정할 수 있습니다." });
     }
@@ -155,6 +185,7 @@ router.put("/:id", checkLevel, async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
     const user = (req as any).user;
+    const userId = user.id || user.userId || user.memberId || user.no;
     const { id } = req.params;
     const site = await WorkSite.findByPk(Number(id));
 
@@ -163,7 +194,7 @@ router.put("/:id", checkLevel, async (req: Request, res: Response) => {
       return res.status(404).json({ ok: false, message: "현장을 찾을 수 없습니다." });
     }
 
-    if (user.level === 9 && site.memberId !== user.id) {
+    if (user.level === 9 && site.memberId !== userId) {
       await tx.rollback();
       return res.status(403).json({ ok: false, message: "권한이 없습니다." });
     }
@@ -180,12 +211,13 @@ router.put("/:id", checkLevel, async (req: Request, res: Response) => {
 });
 
 /**
- * 4. 현장(WorkSite) 삭제 (연결된 WorkItem, Report 등 Cascade 삭제됨)
+ * 4. 현장(WorkSite) 삭제
  */
 router.delete("/:id", checkLevel, async (req: Request, res: Response) => {
   const tx = await sequelize.transaction();
   try {
     const user = (req as any).user;
+    const userId = user.id || user.userId || user.memberId || user.no;
     const site = await WorkSite.findByPk(Number(req.params.id));
     
     if (!site) {
@@ -193,7 +225,7 @@ router.delete("/:id", checkLevel, async (req: Request, res: Response) => {
       return res.status(404).json({ ok: false, message: "현장을 찾을 수 없습니다." });
     }
 
-    if (user.level === 9 && site.memberId !== user.id) {
+    if (user.level === 9 && site.memberId !== userId) {
       await tx.rollback();
       return res.status(403).json({ ok: false, message: "본인의 현장만 삭제할 수 있습니다." });
     }
@@ -208,23 +240,23 @@ router.delete("/:id", checkLevel, async (req: Request, res: Response) => {
 });
 
 /**
- * 5. 🔥 특정 현장에 엑셀 데이터 업로드 (동적 파싱 & 위치 변환)
+ * 5. 🔥 특정 현장에 엑셀 데이터 업로드
  */
 router.post("/:id/upload", checkLevel, upload.single("file"), async (req: Request, res: Response) => {
   let tx: Transaction | null = null;
   try {
     const user = (req as any).user;
+    const userId = user.id || user.userId || user.memberId || user.no;
     const siteId = Number(req.params.id);
     const site = await WorkSite.findByPk(siteId);
 
     if (!site) return res.status(404).json({ ok: false, message: "현장을 찾을 수 없습니다." });
     if (!req.file) return res.status(400).json({ ok: false, message: "엑셀 파일이 없습니다." });
 
-    if (user.level === 9 && site.memberId !== user.id) {
+    if (user.level === 9 && site.memberId !== userId) {
       return res.status(403).json({ ok: false, message: "업로드 권한이 없습니다." });
     }
 
-    // 1. 엑셀 읽기
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rawRows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
@@ -235,11 +267,9 @@ router.post("/:id/upload", checkLevel, upload.single("file"), async (req: Reques
 
     tx = await sequelize.transaction();
 
-    // 2. 엑셀 헤더(컬럼명) 추출 후 WorkSite에 저장
     const headers = Object.keys(rawRows[0]);
     await site.update({ excelHeaders: headers }, { transaction: tx });
 
-    // 3. 기존 데이터 덮어쓰기 옵션 처리 (필요시)
     if (req.body.overwrite === "true") {
       await WorkItem.destroy({ where: { workSiteId: siteId }, transaction: tx });
     }
@@ -247,16 +277,13 @@ router.post("/:id/upload", checkLevel, upload.single("file"), async (req: Reques
     const parsedItems = [];
     const errors: string[] = [];
 
-    // 4. 로우 데이터 파싱 (고객명, 주소 유추 로직 포함)
     for (const [index, row] of rawRows.entries()) {
       try {
         let extractedCustomerName = "미지정 고객";
         let extractedAddress = "";
 
-        // 동적으로 엑셀 컬럼을 순회하며 '이름', '주소' 관련 항목을 휴리스틱으로 찾아냄
         for (const key of Object.keys(row)) {
           const val = String(row[key] || "").trim();
-          
           if (key.includes("고객명") || key.includes("이름") || key.includes("성명") || key.includes("경로당")) {
             if (val) extractedCustomerName = val;
           }
@@ -265,7 +292,6 @@ router.post("/:id/upload", checkLevel, upload.single("file"), async (req: Reques
           }
         }
 
-        // 주소가 발견되면 카카오 내비 연동을 위한 위/경도 변환
         let lat = null, lng = null;
         if (extractedAddress) {
           try {
@@ -277,15 +303,14 @@ router.post("/:id/upload", checkLevel, upload.single("file"), async (req: Reques
           }
         }
 
-        // WorkItem 조립
         parsedItems.push({
           workSiteId: siteId,
           customerName: extractedCustomerName,
-          rowData: row, // 엑셀의 모든 데이터를 JSON으로 통째로 저장
+          rowData: row,
           latitude: lat,
           longitude: lng,
           status: 'PENDING',
-          routeOrder: index + 1 // 등록된 순서대로 기본 우선순위 부여
+          routeOrder: index + 1
         });
 
       } catch (err) {
@@ -293,7 +318,6 @@ router.post("/:id/upload", checkLevel, upload.single("file"), async (req: Reques
       }
     }
 
-    // 5. Bulk Create
     await WorkItem.bulkCreate(parsedItems as any, { transaction: tx });
     await tx.commit();
 
